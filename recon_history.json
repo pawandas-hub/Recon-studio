@@ -1,0 +1,146 @@
+{
+  "runs": [
+    {
+      "timestamp": "Friday, 04 Sep 2026 · 09:47:09 AM (IST)",
+      "mode": "Sales",
+      "files_count": 3,
+      "total": 383,
+      "matched": 378,
+      "exceptions": 5,
+      "match_rate": "98.7%",
+      "elapsed": 5.8
+    },
+    {
+      "timestamp": "Friday, 04 Sep 2026 · 09:43:40 AM (IST)",
+      "mode": "Sales",
+      "files_count": 3,
+      "total": 383,
+      "matched": 378,
+      "exceptions": 5,
+      "match_rate": "98.7%",
+      "elapsed": 6.1
+    },
+    {
+      "timestamp": "Friday, 04 Sep 2026 · 09:38:51 AM (IST)",
+      "mode": "Sales",
+      "files_count": 3,
+      "total": 383,
+      "matched": 378,
+      "exceptions": 5,
+      "match_rate": "98.7%",
+      "elapsed": 6.2
+    },
+    {
+      "timestamp": "Friday, 04 Sep 2026 · 12:00:17 AM (IST)",
+      "mode": "Sales",
+      "files_count": 3,
+      "total": 383,
+      "matched": 378,
+      "exceptions": 5,
+      "match_rate": "98.7%",
+      "elapsed": 8.4
+    },
+    {
+      "timestamp": "Thursday, 03 Sep 2026 · 11:56:40 PM (IST)",
+      "mode": "Sales",
+      "files_count": 7,
+      "total": 629,
+      "matched": 523,
+      "exceptions": 106,
+      "match_rate": "83.1%",
+      "elapsed": 3.1
+    },
+    {
+      "timestamp": "Thursday, 03 Sep 2026 · 11:53:48 PM (IST)",
+      "mode": "Sales",
+      "files_count": 3,
+      "total": 206,
+      "matched": 206,
+      "exceptions": 0,
+      "match_rate": "100.0%",
+      "elapsed": 0
+    }
+  ],
+  "files": [
+    {
+      "timestamp": "Friday, 04 Sep 2026 · 09:46:48 AM (IST)",
+      "filename": "SAP_Omni_-_Total_Sales_Data_2026_09_03.xlsx",
+      "type": "Sales Register",
+      "size": "101 KB",
+      "path": "G:/My Drive/PAWAN/2026/Omni/Revenue/Aug'26/03.09.2026/SAP_Omni_-_Total_Sales_Data_2026_09_03.xlsx",
+      "status": "Loaded ✔"
+    },
+    {
+      "timestamp": "Friday, 04 Sep 2026 · 09:46:48 AM (IST)",
+      "filename": "Account Balance - 4020101022, F&V sales- New Biz.xls",
+      "type": "SAP Ledger",
+      "size": "373 KB",
+      "path": "G:/My Drive/PAWAN/2026/Omni/Revenue/Aug'26/03.09.2026/Account Balance - 4020101022, F&V sales- New Biz.xls",
+      "status": "Loaded ✔"
+    },
+    {
+      "timestamp": "Friday, 04 Sep 2026 · 09:46:48 AM (IST)",
+      "filename": "Account Balance - 4020101003, Saleof staples.xls",
+      "type": "SAP Ledger",
+      "size": "6.3 MB",
+      "path": "G:/My Drive/PAWAN/2026/Omni/Revenue/Aug'26/03.09.2026/Account Balance - 4020101003, Saleof staples.xls",
+      "status": "Loaded ✔"
+    },
+    {
+      "timestamp": "Friday, 04 Sep 2026 · 09:43:30 AM (IST)",
+      "filename": "SAP_Omni_-_Total_Sales_Data_2026_09_03.xlsx",
+      "type": "Sales Register",
+      "size": "101 KB",
+      "path": "G:/My Drive/PAWAN/2026/Omni/Revenue/Aug'26/03.09.2026/SAP_Omni_-_Total_Sales_Data_2026_09_03.xlsx",
+      "status": "Loaded ✔"
+    },
+    {
+      "timestamp": "Friday, 04 Sep 2026 · 09:43:30 AM (IST)",
+      "filename": "Account Balance - 4020101022, F&V sales- New Biz.xls",
+      "type": "SAP Ledger",
+      "size": "373 KB",
+      "path": "G:/My Drive/PAWAN/2026/Omni/Revenue/Aug'26/03.09.2026/Account Balance - 4020101022, F&V sales- New Biz.xls",
+      "status": "Loaded ✔"
+    },
+    {
+      "timestamp": "Friday, 04 Sep 2026 · 09:43:30 AM (IST)",
+      "filename": "Account Balance - 4020101003, Saleof staples.xls",
+      "type": "SAP Ledger",
+      "size": "6.3 MB",
+      "path": "G:/My Drive/PAWAN/2026/Omni/Revenue/Aug'26/03.09.2026/Account Balance - 4020101003, Saleof staples.xls",
+      "status": "Loaded ✔"
+    },
+    {
+      "timestamp": "Friday, 04 Sep 2026 · 09:38:35 AM (IST)",
+      "filename": "SAP_Omni_-_Total_Sales_Data_2026_09_03.xlsx",
+      "type": "Sales Register",
+      "size": "101 KB",
+      "path": "G:/My Drive/PAWAN/2026/Omni/Revenue/Aug'26/03.09.2026/SAP_Omni_-_Total_Sales_Data_2026_09_03.xlsx",
+      "status": "Loaded ✔"
+    },
+    {
+      "timestamp": "Friday, 04 Sep 2026 · 09:38:35 AM (IST)",
+      "filename": "Account Balance - 4020101022, F&V sales- New Biz.xls",
+      "type": "SAP Ledger",
+      "size": "373 KB",
+      "path": "G:/My Drive/PAWAN/2026/Omni/Revenue/Aug'26/03.09.2026/Account Balance - 4020101022, F&V sales- New Biz.xls",
+      "status": "Loaded ✔"
+    },
+    {
+      "timestamp": "Friday, 04 Sep 2026 · 09:38:35 AM (IST)",
+      "filename": "Account Balance - 4020101003, Saleof staples.xls",
+      "type": "SAP Ledger",
+      "size": "6.3 MB",
+      "path": "G:/My Drive/PAWAN/2026/Omni/Revenue/Aug'26/03.09.2026/Account Balance - 4020101003, Saleof staples.xls",
+      "status": "Loaded ✔"
+    },
+    {
+      "timestamp": "Thursday, 03 Sep 2026 · 11:59:59 PM (IST)",
+      "filename": "SAP_Omni_-_Total_Sales_Data_2026_09_03.xlsx",
+      "type": "Sales Register",
+      "size": "101 KB",
+      "path": "G:/My Drive/PAWAN/2026/Omni/Revenue/Aug'26/03.09.2026/SAP_Omni_-_Total_Sales_Data_2026_09_03.xlsx",
+      "status": "Loaded ✔"
+    }
+  ]
+}
