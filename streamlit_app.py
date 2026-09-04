@@ -110,10 +110,8 @@ st.markdown("""
     }
 
     /* Main Container Padding — Generous top spacing so header is never clipped */
-    .block-container {
         padding-top: 4.5rem !important;
         padding-bottom: 2rem !important;
-        max-width: 98% !important;
     }
 
     /* Top Bar Header */
@@ -127,7 +125,6 @@ st.markdown("""
         padding: 12px 20px;
         margin-bottom: 18px;
         box-shadow: 0 1px 2px rgba(0,0,0,0.03);
-    }
     .recon-breadcrumb {
         font-size: 0.95rem;
         font-weight: 700;
@@ -442,38 +439,36 @@ if st.session_state.active_view == "Reconciliation":
     col_donut, col_files = st.columns([1, 2])
 
     with col_donut:
-        st.markdown("""
-        <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:16px 18px; min-height:240px;">
-            <div style="font-weight:700; font-size:0.95rem; color:#0f172a; margin-bottom:8px;">Match Breakdown</div>
-        """, unsafe_allow_html=True)
-
-        try:
-            import plotly.graph_objects as go
-            labels = ["Matched", "Needs review", "Mismatch / Missing"]
-            values = [matched_n if total_n else 1, review_n if total_n else 0, mismatch_n if total_n else 0]
-            colors = ["#10b981", "#f59e0b", "#ef4444"]
+        with st.container(border=True):
+            st.markdown('<div style="font-weight:700; font-size:0.95rem; color:#0f172a; margin-bottom:4px;">Match Breakdown</div>', unsafe_allow_html=True)
             
-            fig = go.Figure(data=[go.Pie(
-                labels=labels,
-                values=values,
-                hole=0.68,
-                marker=dict(colors=colors),
-                textinfo="none",
-                hoverinfo="label+value+percent" if total_n else "none",
-                showlegend=False,
-            )])
-            fig.update_layout(
-                height=110,
-                margin=dict(l=0, r=0, t=0, b=0),
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        except Exception:
-            pass
+            try:
+                import plotly.graph_objects as go
+                labels = ["Matched", "Needs review", "Mismatch / Missing"]
+                values = [matched_n if total_n else 1, review_n if total_n else 0, mismatch_n if total_n else 0]
+                colors = ["#10b981", "#f59e0b", "#ef4444"]
+                
+                fig = go.Figure(data=[go.Pie(
+                    labels=labels,
+                    values=values,
+                    hole=0.68,
+                    marker=dict(colors=colors),
+                    textinfo="none",
+                    hoverinfo="label+value+percent" if total_n else "none",
+                    showlegend=False,
+                )])
+                fig.update_layout(
+                    height=130,
+                    margin=dict(l=0, r=0, t=4, b=4),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                )
+                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            except Exception:
+                pass
 
-        st.markdown(f"""
-            <div style="font-size:0.8rem; font-weight:600; color:#334155; margin-top:8px;">
+            st.markdown(f"""
+            <div style="font-size:0.8rem; font-weight:600; color:#334155; margin-top:2px;">
                 <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
                     <span><span style="color:#10b981;">■</span> Matched</span>
                     <span style="font-weight:700; color:#0f172a;">{matched_n}</span>
@@ -487,39 +482,34 @@ if st.session_state.active_view == "Reconciliation":
                     <span style="font-weight:700; color:#0f172a;">{mismatch_n}</span>
                 </div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
     with col_files:
-        st.markdown("""
-        <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:16px 18px; min-height:240px;">
-            <div style="font-weight:700; font-size:0.95rem; color:#0f172a; margin-bottom:6px;">Input Files</div>
-        """, unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown('<div style="font-weight:700; font-size:0.95rem; color:#0f172a; margin-bottom:4px;">Input Files</div>', unsafe_allow_html=True)
+            
+            uploaded_files = st.file_uploader(
+                "Drop Excel / CSV / Bank reports here",
+                type=["xlsx", "xls", "csv", "tsv", "zip"],
+                accept_multiple_files=True,
+                key="main_uploader",
+                label_visibility="collapsed",
+            )
 
-        uploaded_files = st.file_uploader(
-            "Drop Excel / CSV / Bank reports here",
-            type=["xlsx", "xls", "csv", "tsv", "zip"],
-            accept_multiple_files=True,
-            key="main_uploader",
-            label_visibility="collapsed",
-        )
-
-        if uploaded_files:
-            st.markdown(f"<div style='font-size:0.8rem; color:#4f46e5; font-weight:700; margin-top:4px;'>📎 {len(uploaded_files)} file(s) attached:</div>", unsafe_allow_html=True)
-            chips = '<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">'
-            for uf in uploaded_files:
-                sz = len(uf.getvalue()) / 1024
-                chips += f'<span style="background:#eef2ff; color:#4f46e5; border:1px solid #c7d2fe; padding:3px 8px; border-radius:5px; font-size:0.75rem; font-weight:600;">{uf.name} ({sz:.0f} KB)</span>'
-                if not any(f["name"] == uf.name for f in st.session_state.ingested_files_log):
-                    st.session_state.ingested_files_log.insert(0, {
-                        "name": uf.name,
-                        "size": f"{sz:.0f} KB",
-                        "time": _get_ist_time_str(),
-                    })
-            chips += '</div>'
-            st.markdown(chips, unsafe_allow_html=True)
-
-        st.markdown('</div>', unsafe_allow_html=True)
+            if uploaded_files:
+                st.markdown(f"<div style='font-size:0.8rem; color:#4f46e5; font-weight:700; margin-top:4px;'>📎 {len(uploaded_files)} file(s) attached:</div>", unsafe_allow_html=True)
+                chips = '<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">'
+                for uf in uploaded_files:
+                    sz = len(uf.getvalue()) / 1024
+                    chips += f'<span style="background:#eef2ff; color:#4f46e5; border:1px solid #c7d2fe; padding:3px 8px; border-radius:5px; font-size:0.75rem; font-weight:600;">{uf.name} ({sz:.0f} KB)</span>'
+                    if not any(f["name"] == uf.name for f in st.session_state.ingested_files_log):
+                        st.session_state.ingested_files_log.insert(0, {
+                            "name": uf.name,
+                            "size": f"{sz:.0f} KB",
+                            "time": _get_ist_time_str(),
+                        })
+                chips += '</div>'
+                st.markdown(chips, unsafe_allow_html=True)
 
     # -----------------------------------------------------------------------
     # Execution Logic
@@ -583,111 +573,106 @@ if st.session_state.active_view == "Reconciliation":
     # -----------------------------------------------------------------------
     # Row 3: Filter Tabs + Results Table
     # -----------------------------------------------------------------------
-    st.markdown("""
-    <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:16px 18px;">
-    """, unsafe_allow_html=True)
-
-    t_c1, t_c2 = st.columns([2, 1])
-    with t_c1:
-        tbl_tab = st.segmented_control(
-            "Filter Category",
-            options=["All", "Sales", "Collection"],
-            default="All",
-            label_visibility="collapsed",
-        )
-    with t_c2:
-        search_txt = st.text_input("Filter", placeholder="🔍 Filter records...", label_visibility="collapsed")
-
-    if results_df is not None and not results_df.empty:
-        df_view = results_df.copy()
-
-        # Tab Filter
-        if tbl_tab == "Sales" and "Recon_Type" in df_view.columns:
-            df_view = df_view[df_view["Recon_Type"] == "Sales"]
-        elif tbl_tab == "Collection" and "Recon_Type" in df_view.columns:
-            df_view = df_view[df_view["Recon_Type"] == "Collection"]
-
-        # Search Filter
-        if search_txt:
-            mask = df_view.apply(lambda r: search_txt.lower() in " ".join(str(x) for x in r.values).lower(), axis=1)
-            df_view = df_view[mask]
-
-        # Table records formatting
-        records = []
-        for _, row in df_view.iterrows():
-            rtype = row.get("Recon_Type", "Sales")
-            if rtype == "Sales":
-                ref = row.get("RefId_Ref1") or row.get("Ref2_Invoice_No") or row.get("Reference") or ""
-                bu = row.get("Business_Unit", "")
-                posting = str(row.get("Posting_Date", ""))
-                sap_amt = _fmt_inr(row.get("Total_CD_LC", 0))
-                book_amt = _fmt_inr(row.get("Total_Sales_Value", 0))
-            else:
-                ref = row.get("Bank_UTR", "")
-                bu = row.get("Bank_Name", "")
-                posting = str(row.get("SAP_Posting_Date", ""))
-                sap_amt = _fmt_inr(row.get("SAP_Amount", 0))
-                book_amt = _fmt_inr(row.get("Bank_Amount", 0))
-
-            var_val = row.get("Amount_Variance", 0)
-            status = str(row.get("Overall_Status", ""))
-            remarks = str(row.get("Reconciliation_Remarks", ""))
-
-            records.append({
-                "Source": rtype,
-                "Reference": str(ref),
-                "Business Unit": str(bu),
-                "SAP Posting": posting,
-                "SAP Amount": sap_amt,
-                "Book Amount": book_amt,
-                "Variance": _fmt_inr(var_val) if var_val else "—",
-                "Status": status,
-                "Remarks": remarks,
-            })
-
-        df_final = pd.DataFrame(records)
-
-        def style_status(val):
-            s = str(val).lower()
-            if "matched" in s and "not" not in s and "mis" not in s:
-                return "color: #10b981; font-weight: 700;"
-            elif "missing" in s or "mismatch" in s:
-                return "color: #ef4444; font-weight: 700;"
-            elif "review" in s:
-                return "color: #f59e0b; font-weight: 700;"
-            return ""
-
-        styled_t = df_final.style.map(style_status, subset=["Status"])
-        st.dataframe(styled_t, use_container_width=True, height=440)
-
-        # Download Buttons
-        d_c1, d_c2, _ = st.columns([1.5, 1.5, 3])
-        with d_c1:
-            exporter = ExcelReportExporter()
-            with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
-                exporter.export(tmp.name, results_df)
-                with open(tmp.name, "rb") as f:
-                    xl_bytes = f.read()
-            st.download_button(
-                "📊  Export Excel Report",
-                data=xl_bytes,
-                file_name="Reconciliation_Summary_Report.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                type="primary",
+    with st.container(border=True):
+        t_c1, t_c2 = st.columns([2, 1])
+        with t_c1:
+            tbl_tab = st.segmented_control(
+                "Filter Category",
+                options=["All", "Sales", "Collection"],
+                default="All",
+                label_visibility="collapsed",
             )
-        with d_c2:
-            st.download_button(
-                "📄  Export CSV",
-                data=results_df.to_csv(index=False).encode("utf-8"),
-                file_name="Reconciliation_Results.csv",
-                mime="text/csv",
-            )
-    else:
-        empty_cols = ["Source", "Reference", "Business Unit", "SAP Posting", "SAP Amount", "Book Amount", "Variance", "Status"]
-        st.dataframe(pd.DataFrame(columns=empty_cols), use_container_width=True, height=280)
-        st.caption("No records to display. Drop files above and click 'Run Reconciliation'.")
+        with t_c2:
+            search_txt = st.text_input("Filter", placeholder="🔍 Filter records...", label_visibility="collapsed")
 
-    st.markdown("</div>", unsafe_allow_html=True)
+        if results_df is not None and not results_df.empty:
+            df_view = results_df.copy()
+
+            # Tab Filter
+            if tbl_tab == "Sales" and "Recon_Type" in df_view.columns:
+                df_view = df_view[df_view["Recon_Type"] == "Sales"]
+            elif tbl_tab == "Collection" and "Recon_Type" in df_view.columns:
+                df_view = df_view[df_view["Recon_Type"] == "Collection"]
+
+            # Search Filter
+            if search_txt:
+                mask = df_view.apply(lambda r: search_txt.lower() in " ".join(str(x) for x in r.values).lower(), axis=1)
+                df_view = df_view[mask]
+
+            # Table records formatting
+            records = []
+            for _, row in df_view.iterrows():
+                rtype = row.get("Recon_Type", "Sales")
+                if rtype == "Sales":
+                    ref = row.get("RefId_Ref1") or row.get("Ref2_Invoice_No") or row.get("Reference") or ""
+                    bu = row.get("Business_Unit", "")
+                    posting = str(row.get("Posting_Date", ""))
+                    sap_amt = _fmt_inr(row.get("Total_CD_LC", 0))
+                    book_amt = _fmt_inr(row.get("Total_Sales_Value", 0))
+                else:
+                    ref = row.get("Bank_UTR", "")
+                    bu = row.get("Bank_Name", "")
+                    posting = str(row.get("SAP_Posting_Date", ""))
+                    sap_amt = _fmt_inr(row.get("SAP_Amount", 0))
+                    book_amt = _fmt_inr(row.get("Bank_Amount", 0))
+
+                var_val = row.get("Amount_Variance", 0)
+                status = str(row.get("Overall_Status", ""))
+                remarks = str(row.get("Reconciliation_Remarks", ""))
+
+                records.append({
+                    "Source": rtype,
+                    "Reference": str(ref),
+                    "Business Unit": str(bu),
+                    "SAP Posting": posting,
+                    "SAP Amount": sap_amt,
+                    "Book Amount": book_amt,
+                    "Variance": _fmt_inr(var_val) if var_val else "—",
+                    "Status": status,
+                    "Remarks": remarks,
+                })
+
+            df_final = pd.DataFrame(records)
+
+            def style_status(val):
+                s = str(val).lower()
+                if "matched" in s and "not" not in s and "mis" not in s:
+                    return "color: #10b981; font-weight: 700;"
+                elif "missing" in s or "mismatch" in s:
+                    return "color: #ef4444; font-weight: 700;"
+                elif "review" in s:
+                    return "color: #f59e0b; font-weight: 700;"
+                return ""
+
+            styled_t = df_final.style.map(style_status, subset=["Status"])
+            st.dataframe(styled_t, use_container_width=True, height=440)
+
+            # Download Buttons
+            d_c1, d_c2, _ = st.columns([1.5, 1.5, 3])
+            with d_c1:
+                exporter = ExcelReportExporter()
+                with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+                    exporter.export(tmp.name, results_df)
+                    with open(tmp.name, "rb") as f:
+                        xl_bytes = f.read()
+                st.download_button(
+                    "📊  Export Excel Report",
+                    data=xl_bytes,
+                    file_name="Reconciliation_Summary_Report.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    type="primary",
+                )
+            with d_c2:
+                st.download_button(
+                    "📄  Export CSV",
+                    data=results_df.to_csv(index=False).encode("utf-8"),
+                    file_name="Reconciliation_Results.csv",
+                    mime="text/csv",
+                )
+        else:
+            empty_cols = ["Source", "Reference", "Business Unit", "SAP Posting", "SAP Amount", "Book Amount", "Variance", "Status"]
+            st.dataframe(pd.DataFrame(columns=empty_cols), use_container_width=True, height=280)
+            st.caption("No records to display. Drop files above and click 'Run Reconciliation'.")
 
 
 # ---------------------------------------------------------------------------
