@@ -116,15 +116,19 @@ st.markdown("""
 
     /* Top Bar Header */
     .recon-topbar {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 12px 20px;
-        margin-bottom: 18px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+        display: flex !important;
+        flex-direction: row !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        width: 100% !important;
+        background: #ffffff !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 8px !important;
+        padding: 10px 18px !important;
+        margin-bottom: 18px !important;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.03) !important;
+        box-sizing: border-box !important;
+    }
     .recon-breadcrumb {
         font-size: 0.95rem;
         font-weight: 700;
@@ -135,12 +139,15 @@ st.markdown("""
         font-weight: 500;
     }
     .recon-topbar-right {
-        display: flex;
-        align-items: center;
-        gap: 16px;
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        gap: 16px !important;
     }
     .theme-pill {
-        display: inline-flex;
+        display: inline-flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
         background: #f1f5f9;
         border-radius: 6px;
         padding: 3px 6px;
