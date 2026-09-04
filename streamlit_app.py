@@ -1,16 +1,11 @@
-"""Recon Studio v3.0 — High Fidelity Web Edition (Exact Desktop UI Replica).
+"""Recon Studio v3.0 — High Fidelity Web Edition.
 
-Recreates the exact UI, layout, components, and styling of Recon Studio v3.0 Desktop:
-- Left Sidebar with enlarged Recon Studio branding (68px), navigation items, and SAP status footer
-- Top Bar: Breadcrumb on the left, Theme selector pill and Ninjacart logo on the far right
-- Header: Sales & Collection Reconciliation title with Segmented pills and Run Reconciliation button
-- Subtitle: Live IST clock, tolerance ±₹1, auto-match information
-- 4 Crisp KPI Cards (Total Records, Matched, Exceptions, Match Rate) with pastel icon badges
-- Middle Row:
-  - Left Card: Match Breakdown with inline SVG donut ring chart + color-coded legend
-  - Right Card: Input Files dropzone
-- Bottom Row: Filter Category tabs, Search box, itemized table with status color-coding, Excel/CSV exports
-- Dashboard, Data Sources, Reports views
+Features:
+1. Working 3-Mode Theme System: Auto, Light, Dark with dynamic CSS and logo switching.
+2. Top Right Corner: Ninjacart Logo (3 sizes bigger — 52px) with Theme Switcher underneath.
+3. Interactive KPI Cards: Clicking Total Records, Matched, or Exceptions opens a detailed modal popup (@st.dialog) with in-modal search and export.
+4. Left Sidebar: Enlarged Recon Studio logo (68px), navigation buttons (Dashboard, Reconciliation, Data Sources, Reports), status footer.
+5. Reconciliation Workspace: Header with segmented controls (Sales, Collection, Both), Run button, SVG donut breakdown, input dropzone, itemized table.
 """
 from __future__ import annotations
 
@@ -51,6 +46,24 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------------------------
+# Session State Init
+# ---------------------------------------------------------------------------
+if "theme_mode" not in st.session_state:
+    st.session_state.theme_mode = "Auto"
+if "active_view" not in st.session_state:
+    st.session_state.active_view = "Reconciliation"
+if "active_segment" not in st.session_state:
+    st.session_state.active_segment = "Sales"
+if "results_df" not in st.session_state:
+    st.session_state.results_df = None
+if "run_history" not in st.session_state:
+    st.session_state.run_history = []
+if "ingested_files_log" not in st.session_state:
+    st.session_state.ingested_files_log = []
+if "elapsed_sec" not in st.session_state:
+    st.session_state.elapsed_sec = 0.0
+
+# ---------------------------------------------------------------------------
 # Helper: Load Base64 Logos
 # ---------------------------------------------------------------------------
 def _load_b64_image(rel_path: str) -> str:
@@ -61,11 +74,115 @@ def _load_b64_image(rel_path: str) -> str:
             return f"data:image/png;base64,{data}"
     return ""
 
-NINJACART_LOGO_B64 = _load_b64_image("assets/ninjacart_light.png")
-RECON_LOGO_B64 = _load_b64_image("assets/recon_studio_cropped.png")
+# Theme-aware logo resolution
+is_dark = (st.session_state.theme_mode == "Dark")
+
+if is_dark:
+    NINJACART_LOGO_B64 = _load_b64_image("assets/ninjacart_dark.png") or _load_b64_image("assets/ninjacart_light.png")
+    RECON_LOGO_B64 = _load_b64_image("assets/recon_logo_dark.png") or _load_b64_image("assets/recon_studio_cropped.png")
+else:
+    NINJACART_LOGO_B64 = _load_b64_image("assets/ninjacart_light.png")
+    RECON_LOGO_B64 = _load_b64_image("assets/recon_studio_cropped.png") or _load_b64_image("assets/recon_logo_light.png")
 
 # ---------------------------------------------------------------------------
-# Time & Number Formatting
+# Theme Color Palettes
+# ---------------------------------------------------------------------------
+if is_dark:
+    T_BG = "#0b1220"
+    T_CARD = "#111a2e"
+    T_BORDER = "#1f2b45"
+    T_TEXT = "#e2e8f0"
+    T_MUTED = "#8fa0ba"
+    T_PRIMARY = "#818cf8"
+    T_PRIMARY_HOVER = "#6366f1"
+    T_PRIMARY_SOFT = "#1e1b4b"
+    T_GREEN = "#10b981"
+    T_GREEN_SOFT = "#062a20"
+    T_AMBER = "#f59e0b"
+    T_AMBER_SOFT = "#2b1e05"
+    T_RED = "#ef4444"
+    T_RED_SOFT = "#2c0e0e"
+    T_SLATE_SOFT = "#1a2438"
+else:
+    T_BG = "#f4f6fb"
+    T_CARD = "#ffffff"
+    T_BORDER = "#e2e8f0"
+    T_TEXT = "#0f172a"
+    T_MUTED = "#64748b"
+    T_PRIMARY = "#4f46e5"
+    T_PRIMARY_HOVER = "#4338ca"
+    T_PRIMARY_SOFT = "#eef2ff"
+    T_GREEN = "#10b981"
+    T_GREEN_SOFT = "#ecfdf5"
+    T_AMBER = "#f59e0b"
+    T_AMBER_SOFT = "#fffbeb"
+    T_RED = "#ef4444"
+    T_RED_SOFT = "#fef2f2"
+    T_SLATE_SOFT = "#f1f5f9"
+
+# ---------------------------------------------------------------------------
+# Dynamic CSS Injection
+# ---------------------------------------------------------------------------
+st.markdown(f"""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    
+    html, body, [class*="css"], .stApp {{
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+        background-color: {T_BG} !important;
+        color: {T_TEXT} !important;
+    }}
+
+    .block-container {{
+        padding-top: 4.5rem !important;
+        padding-bottom: 2rem !important;
+        max-width: 98% !important;
+    }}
+
+    /* Sidebar Clean Styling */
+    section[data-testid="stSidebar"] {{
+        background-color: {T_CARD} !important;
+        border-right: 1px solid {T_BORDER} !important;
+    }}
+
+    /* Buttons */
+    .stButton > button[kind="primary"] {{
+        background-color: {T_PRIMARY} !important;
+        color: #ffffff !important;
+        border: none !important;
+        border-radius: 6px !important;
+        font-weight: 700 !important;
+        padding: 0.5rem 1.2rem !important;
+    }}
+    .stButton > button[kind="primary"]:hover {{
+        background-color: {T_PRIMARY_HOVER} !important;
+    }}
+    
+    .stButton > button[kind="secondary"] {{
+        background-color: {T_CARD} !important;
+        color: {T_TEXT} !important;
+        border: 1px solid {T_BORDER} !important;
+    }}
+
+    /* Dataframe Table styling */
+    .stDataFrame {{
+        border: 1px solid {T_BORDER} !important;
+        border-radius: 8px !important;
+        background: {T_CARD} !important;
+    }}
+
+    /* Streamlit Dialog / Modal */
+    div[data-testid="stDialog"] div[role="dialog"] {{
+        background-color: {T_CARD} !important;
+        color: {T_TEXT} !important;
+        border: 1px solid {T_BORDER} !important;
+        border-radius: 12px !important;
+    }}
+</style>
+""", unsafe_allow_html=True)
+
+# ---------------------------------------------------------------------------
+# Formatting Helpers
 # ---------------------------------------------------------------------------
 def _get_ist_time_str() -> str:
     now_utc = datetime.datetime.now(datetime.timezone.utc)
@@ -96,13 +213,11 @@ def _fmt_inr(n) -> str:
     except (TypeError, ValueError):
         return str(n)
 
-# ---------------------------------------------------------------------------
-# Helper: Inline SVG Donut Chart (Exact Tkinter Canvas replica)
-# ---------------------------------------------------------------------------
 def _generate_donut_svg(matched: int, review: int, mismatch: int) -> str:
     total = matched + review + mismatch
+    bg_circle_color = T_BORDER
     if total == 0:
-        return '<svg width="110" height="110" viewBox="0 0 100 100"><circle cx="50" cy="50" r="38" fill="none" stroke="#e2e8f0" stroke-width="12" /></svg>'
+        return f'<svg width="110" height="110" viewBox="0 0 100 100"><circle cx="50" cy="50" r="38" fill="none" stroke="{bg_circle_color}" stroke-width="12" /></svg>'
 
     circ = 2 * math.pi * 38
     m_len = (matched / total) * circ
@@ -113,115 +228,94 @@ def _generate_donut_svg(matched: int, review: int, mismatch: int) -> str:
 
     svg = (
         f'<svg width="110" height="110" viewBox="0 0 100 100" style="transform: rotate(-90deg);">'
-        f'<circle cx="50" cy="50" r="38" fill="none" stroke="#e2e8f0" stroke-width="12" />'
-        f'<circle cx="50" cy="50" r="38" fill="none" stroke="#10b981" stroke-width="12" stroke-dasharray="{m_len:.1f} {circ:.1f}" />'
-        f'<circle cx="50" cy="50" r="38" fill="none" stroke="#f59e0b" stroke-width="12" stroke-dasharray="{r_len:.1f} {circ:.1f}" stroke-dashoffset="{offset2:.1f}" />'
-        f'<circle cx="50" cy="50" r="38" fill="none" stroke="#ef4444" stroke-width="12" stroke-dasharray="{mis_len:.1f} {circ:.1f}" stroke-dashoffset="{offset3:.1f}" />'
+        f'<circle cx="50" cy="50" r="38" fill="none" stroke="{bg_circle_color}" stroke-width="12" />'
+        f'<circle cx="50" cy="50" r="38" fill="none" stroke="{T_GREEN}" stroke-width="12" stroke-dasharray="{m_len:.1f} {circ:.1f}" />'
+        f'<circle cx="50" cy="50" r="38" fill="none" stroke="{T_AMBER}" stroke-width="12" stroke-dasharray="{r_len:.1f} {circ:.1f}" stroke-dashoffset="{offset2:.1f}" />'
+        f'<circle cx="50" cy="50" r="38" fill="none" stroke="{T_RED}" stroke-width="12" stroke-dasharray="{mis_len:.1f} {circ:.1f}" stroke-dashoffset="{offset3:.1f}" />'
         f'</svg>'
     )
     return svg
 
 # ---------------------------------------------------------------------------
-# Global CSS
+# Modal Dialog: KPI Drill-Down Popup (Matching Desktop KpiDetailsModal)
 # ---------------------------------------------------------------------------
-st.markdown("""
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-    
-    html, body, [class*="css"], .stApp {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
-        background-color: #f4f6fb !important;
-        color: #0f172a !important;
-    }
+@st.dialog("📋 Reconciliation Records Viewer", width="large")
+def show_kpi_modal(modal_type: str):
+    results_df = st.session_state.results_df
+    if results_df is None or results_df.empty:
+        st.info("ℹ️ Please run a reconciliation first to view details.")
+        return
 
-    .block-container {
-        padding-top: 4.5rem !important;
-        padding-bottom: 2rem !important;
-        max-width: 98% !important;
-    }
+    if modal_type == "Total":
+        filtered_df = results_df
+        title = "All Reconciliation Records"
+        subtitle = "Complete dataset from the current reconciliation"
+        badge_bg = T_PRIMARY
+    elif modal_type == "Matched":
+        filtered_df = results_df[results_df["Overall_Status"] == "Matched"]
+        title = "Matched Records"
+        subtitle = "Records where SAP and Book/Bank values matched within ±₹1"
+        badge_bg = T_GREEN
+    else:
+        filtered_df = results_df[results_df["Overall_Status"] != "Matched"]
+        title = "Exception & Mismatch Records"
+        subtitle = "Records requiring review, missing entries, or amount variances"
+        badge_bg = T_RED
 
-    .theme-pill {
-        display: inline-flex !important;
-        flex-direction: row !important;
-        align-items: center !important;
-        background: #f1f5f9;
-        border-radius: 6px;
-        padding: 3px 6px;
-        font-size: 0.75rem;
-        font-weight: 600;
-        color: #475569;
-        gap: 8px;
-    }
-    .theme-pill-active {
-        background: #ffffff;
-        color: #4f46e5;
-        padding: 2px 8px;
-        border-radius: 4px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.06);
-    }
+    st.markdown(
+        f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">'
+        f'<div><span style="font-size:1.3rem; font-weight:800; color:{T_TEXT};">{title}</span> '
+        f'<span style="background:{badge_bg}; color:#ffffff; padding:2px 10px; border-radius:12px; font-size:0.8rem; font-weight:700;">{len(filtered_df):,} Records</span></div>'
+        f'</div>'
+        f'<div style="font-size:0.85rem; color:{T_MUTED}; margin-bottom:12px;">— {subtitle}</div>',
+        unsafe_allow_html=True,
+    )
 
-    .stButton > button[kind="primary"] {
-        background-color: #4f46e5 !important;
-        color: #ffffff !important;
-        border: none !important;
-        border-radius: 6px !important;
-        font-weight: 700 !important;
-        padding: 0.5rem 1.2rem !important;
-    }
-    .stButton > button[kind="primary"]:hover {
-        background-color: #4338ca !important;
-    }
+    modal_search = st.text_input(
+        "🔍 Search within template:",
+        placeholder="Type reference ID, status, or any value...",
+        key=f"modal_search_input_{modal_type}",
+    )
 
-    section[data-testid="stSidebar"] {
-        background-color: #ffffff !important;
-        border-right: 1px solid #e2e8f0 !important;
-    }
-    
-    .stDataFrame {
-        border: 1px solid #e2e8f0 !important;
-        border-radius: 8px !important;
-        background: #ffffff !important;
-    }
-</style>
-""", unsafe_allow_html=True)
+    df_show = filtered_df.copy()
+    if modal_search:
+        mask = df_show.apply(lambda r: modal_search.lower() in " ".join(str(v) for v in r.values).lower(), axis=1)
+        df_show = df_show[mask]
 
-# ---------------------------------------------------------------------------
-# Session State
-# ---------------------------------------------------------------------------
-if "active_view" not in st.session_state:
-    st.session_state.active_view = "Reconciliation"
-if "active_segment" not in st.session_state:
-    st.session_state.active_segment = "Sales"
-if "results_df" not in st.session_state:
-    st.session_state.results_df = None
-if "run_history" not in st.session_state:
-    st.session_state.run_history = []
-if "ingested_files_log" not in st.session_state:
-    st.session_state.ingested_files_log = []
-if "elapsed_sec" not in st.session_state:
-    st.session_state.elapsed_sec = 0.0
+    st.caption(f"Showing {len(df_show):,} of {len(filtered_df):,} rows")
+    st.dataframe(df_show, use_container_width=True, height=360)
+
+    # Export Button inside modal
+    csv_bytes = df_show.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        "⬇  Export Filtered View (CSV)",
+        data=csv_bytes,
+        file_name=f"Recon_View_{modal_type}.csv",
+        mime="text/csv",
+        type="primary",
+    )
 
 # ---------------------------------------------------------------------------
 # Left Sidebar Navigation
 # ---------------------------------------------------------------------------
 with st.sidebar:
-    # Logo (2 sizes bigger — 68px height)
+    # Logo (68px height)
     if RECON_LOGO_B64:
         st.markdown(
-            f'<div style="display:flex; align-items:center; justify-content:center; padding: 8px 0 18px 0;">'
+            f'<div style="display:flex; align-items:center; justify-content:center; padding: 10px 0 20px 0;">'
             f'<img src="{RECON_LOGO_B64}" style="height:68px; max-width:100%; object-fit:contain;" />'
             f'</div>',
             unsafe_allow_html=True,
         )
     else:
         st.markdown(
-            '<div style="font-size:1.5rem; font-weight:800; color:#4f46e5; padding:8px 0 18px 0; text-align:center;">'
+            f'<div style="font-size:1.6rem; font-weight:800; color:{T_PRIMARY}; padding:10px 0 20px 0; text-align:center;">'
             '📊 Recon Studio'
             '</div>',
             unsafe_allow_html=True,
         )
 
-    # Navigation buttons
+    # Nav buttons
     views = [
         ("Dashboard", "📊  Dashboard"),
         ("Reconciliation", "🔄  Reconciliation"),
@@ -239,34 +333,49 @@ with st.sidebar:
     # Footer
     st.markdown("<div style='height: 240px;'></div>", unsafe_allow_html=True)
     st.markdown(
-        "<div style='font-size:0.8rem; color:#64748b; padding:12px 2px; border-top:1px solid #e2e8f0; font-weight:500;'>"
+        f"<div style='font-size:0.8rem; color:{T_MUTED}; padding:12px 2px; border-top:1px solid {T_BORDER}; font-weight:500;'>"
         "v3.0 · Connected to SAP ✔"
         "</div>",
         unsafe_allow_html=True,
     )
 
 # ---------------------------------------------------------------------------
-# Top Bar (Breadcrumbs on left, Theme Pill + Ninjacart on right)
+# Top Bar: Breadcrumbs (Left) & Ninjacart Logo (3 sizes bigger: 52px) + Working Theme Switcher Underneath (Right)
 # ---------------------------------------------------------------------------
-ninja_logo_html = f'<img src="{NINJACART_LOGO_B64}" style="height:26px; vertical-align:middle;" />' if NINJACART_LOGO_B64 else '<span style="font-weight:800; color:#0f172a;">ninjacart</span>'
+ninja_logo_html = f'<img src="{NINJACART_LOGO_B64}" style="height:52px; max-width:100%; object-fit:contain;" />' if NINJACART_LOGO_B64 else f'<span style="font-size:1.8rem; font-weight:900; color:{T_TEXT};">ninjacart</span>'
 
 with st.container(border=True):
-    top_c1, top_c2 = st.columns([3, 1.2])
+    top_c1, top_c2 = st.columns([3, 1.8])
     with top_c1:
         st.markdown(
-            f'<div style="font-size: 0.95rem; font-weight: 700; color: #0f172a; padding: 4px 0;">'
-            f'Recon Studio &rsaquo; <span style="color: #64748b; font-weight: 500;">{st.session_state.active_view}</span>'
+            f'<div style="font-size: 1rem; font-weight: 700; color: {T_TEXT}; padding: 14px 0 0 0;">'
+            f'Recon Studio &rsaquo; <span style="color: {T_MUTED}; font-weight: 500;">{st.session_state.active_view}</span>'
             f'</div>',
             unsafe_allow_html=True,
         )
     with top_c2:
+        # Ninjacart Logo on top (3 sizes bigger)
         st.markdown(
-            f'<div style="display:flex; justify-content:flex-end; align-items:center; gap:12px;">'
-            f'<div class="theme-pill"><span class="theme-pill-active">💻 Auto</span><span>☀️ Light</span><span>🌙 Dark</span></div>'
-            f'<div>{ninja_logo_html}</div>'
+            f'<div style="display:flex; justify-content:flex-end; align-items:center; margin-bottom:6px;">'
+            f'{ninja_logo_html}'
             f'</div>',
             unsafe_allow_html=True,
         )
+        # Working Theme Switcher buttons underneath the logo
+        theme_options = ["💻 Auto", "☀️ Light", "🌙 Dark"]
+        curr_theme_idx = 0 if st.session_state.theme_mode == "Auto" else (1 if st.session_state.theme_mode == "Light" else 2)
+        
+        theme_sel = st.segmented_control(
+            "Theme Mode",
+            options=theme_options,
+            default=theme_options[curr_theme_idx],
+            label_visibility="collapsed",
+            key="theme_mode_selector",
+        )
+        clean_theme = theme_sel.split(" ")[-1] if theme_sel else "Auto"
+        if clean_theme != st.session_state.theme_mode:
+            st.session_state.theme_mode = clean_theme
+            st.rerun()
 
 # ---------------------------------------------------------------------------
 # VIEW: RECONCILIATION
@@ -277,8 +386,8 @@ if st.session_state.active_view == "Reconciliation":
     h_col1, h_col2, h_col3 = st.columns([3.2, 1.8, 1.4])
     
     with h_col1:
-        st.markdown('<h2 style="font-size:1.45rem; font-weight:800; margin:0 0 2px 0; color:#0f172a;">Sales & Collection Reconciliation</h2>', unsafe_allow_html=True)
-        st.markdown(f'<div style="font-size:0.8rem; font-weight:600; color:#64748b; margin-bottom:12px;">{_get_ist_time_str()} · Tolerance ±₹1 · Auto-match on Ref ID / UTR</div>', unsafe_allow_html=True)
+        st.markdown(f'<h2 style="font-size:1.45rem; font-weight:800; margin:0 0 2px 0; color:{T_TEXT};">Sales & Collection Reconciliation</h2>', unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:0.8rem; font-weight:600; color:{T_MUTED}; margin-bottom:12px;">{_get_ist_time_str()} · Tolerance ±₹1 · Auto-match on Ref ID / UTR</div>', unsafe_allow_html=True)
 
     with h_col2:
         seg_options = ["Sales", "Collection", "Both"]
@@ -288,6 +397,7 @@ if st.session_state.active_view == "Reconciliation":
             options=seg_options,
             default=seg_options[curr_idx],
             label_visibility="collapsed",
+            key="recon_seg_control",
         )
         if seg_val:
             st.session_state.active_segment = seg_val
@@ -296,7 +406,7 @@ if st.session_state.active_view == "Reconciliation":
         run_reconcile = st.button("▶  Run Reconciliation", type="primary", use_container_width=True)
 
     # -----------------------------------------------------------------------
-    # Row 1: 4 KPI Cards (Distinct White Cards with Shadow & Badges)
+    # Row 1: 4 Interactive KPI Cards with Clickable Popup Modals
     # -----------------------------------------------------------------------
     results_df = st.session_state.results_df
     total_n = len(results_df) if results_df is not None and not results_df.empty else 0
@@ -309,51 +419,58 @@ if st.session_state.active_view == "Reconciliation":
     k1, k2, k3, k4 = st.columns(4)
     with k1:
         st.markdown(f"""
-        <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:14px 16px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 1px 2px rgba(0,0,0,0.03);">
+        <div style="background:{T_CARD}; border:1px solid {T_BORDER}; border-radius:10px; padding:14px 16px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 1px 2px rgba(0,0,0,0.03);">
             <div>
-                <div style="font-size:0.72rem; font-weight:700; color:#64748b; letter-spacing:0.05em; text-transform:uppercase;">TOTAL RECORDS</div>
-                <div style="font-size:1.75rem; font-weight:800; color:#0f172a; line-height:1.2; margin:2px 0;">{total_n:,}</div>
-                <div style="font-size:0.72rem; color:#64748b; font-weight:500;">▲ click to view all records</div>
+                <div style="font-size:0.72rem; font-weight:700; color:{T_MUTED}; letter-spacing:0.05em; text-transform:uppercase;">TOTAL RECORDS</div>
+                <div style="font-size:1.75rem; font-weight:800; color:{T_TEXT}; line-height:1.2; margin:2px 0;">{total_n:,}</div>
+                <div style="font-size:0.72rem; color:{T_MUTED}; font-weight:500;">▲ click below to view</div>
             </div>
-            <div style="width:44px; height:44px; border-radius:8px; background:#eef2ff; color:#4f46e5; display:flex; align-items:center; justify-content:center; font-size:1.3rem;">📄</div>
+            <div style="width:44px; height:44px; border-radius:8px; background:{T_PRIMARY_SOFT}; color:{T_PRIMARY}; display:flex; align-items:center; justify-content:center; font-size:1.3rem;">📄</div>
         </div>
         """, unsafe_allow_html=True)
+        if st.button("🔍 View All Records", key="btn_kpi_total", use_container_width=True):
+            show_kpi_modal("Total")
 
     with k2:
         st.markdown(f"""
-        <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:14px 16px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 1px 2px rgba(0,0,0,0.03);">
+        <div style="background:{T_CARD}; border:1px solid {T_BORDER}; border-radius:10px; padding:14px 16px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 1px 2px rgba(0,0,0,0.03);">
             <div>
-                <div style="font-size:0.72rem; font-weight:700; color:#64748b; letter-spacing:0.05em; text-transform:uppercase;">MATCHED</div>
-                <div style="font-size:1.75rem; font-weight:800; color:#0f172a; line-height:1.2; margin:2px 0;">{matched_n:,}</div>
-                <div style="font-size:0.72rem; color:#64748b; font-weight:500;">▲ click to view matched</div>
+                <div style="font-size:0.72rem; font-weight:700; color:{T_MUTED}; letter-spacing:0.05em; text-transform:uppercase;">MATCHED</div>
+                <div style="font-size:1.75rem; font-weight:800; color:{T_TEXT}; line-height:1.2; margin:2px 0;">{matched_n:,}</div>
+                <div style="font-size:0.72rem; color:{T_MUTED}; font-weight:500;">▲ click below to view</div>
             </div>
-            <div style="width:44px; height:44px; border-radius:8px; background:#ecfdf5; color:#10b981; display:flex; align-items:center; justify-content:center; font-size:1.3rem;">☑️</div>
+            <div style="width:44px; height:44px; border-radius:8px; background:{T_GREEN_SOFT}; color:{T_GREEN}; display:flex; align-items:center; justify-content:center; font-size:1.3rem;">☑️</div>
         </div>
         """, unsafe_allow_html=True)
+        if st.button("🔍 View Matched", key="btn_kpi_matched", use_container_width=True):
+            show_kpi_modal("Matched")
 
     with k3:
         st.markdown(f"""
-        <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:14px 16px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 1px 2px rgba(0,0,0,0.03);">
+        <div style="background:{T_CARD}; border:1px solid {T_BORDER}; border-radius:10px; padding:14px 16px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 1px 2px rgba(0,0,0,0.03);">
             <div>
-                <div style="font-size:0.72rem; font-weight:700; color:#64748b; letter-spacing:0.05em; text-transform:uppercase;">EXCEPTIONS</div>
-                <div style="font-size:1.75rem; font-weight:800; color:#0f172a; line-height:1.2; margin:2px 0;">{exceptions_n:,}</div>
-                <div style="font-size:0.72rem; color:#64748b; font-weight:500;">▼ click to view exceptions</div>
+                <div style="font-size:0.72rem; font-weight:700; color:{T_MUTED}; letter-spacing:0.05em; text-transform:uppercase;">EXCEPTIONS</div>
+                <div style="font-size:1.75rem; font-weight:800; color:{T_TEXT}; line-height:1.2; margin:2px 0;">{exceptions_n:,}</div>
+                <div style="font-size:0.72rem; color:{T_MUTED}; font-weight:500;">▼ click below to view</div>
             </div>
-            <div style="width:44px; height:44px; border-radius:8px; background:#fef2f2; color:#ef4444; display:flex; align-items:center; justify-content:center; font-size:1.3rem;">⚠️</div>
+            <div style="width:44px; height:44px; border-radius:8px; background:{T_RED_SOFT}; color:{T_RED}; display:flex; align-items:center; justify-content:center; font-size:1.3rem;">⚠️</div>
         </div>
         """, unsafe_allow_html=True)
+        if st.button("🔍 View Exceptions", key="btn_kpi_exceptions", use_container_width=True):
+            show_kpi_modal("Exceptions")
 
     with k4:
         st.markdown(f"""
-        <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:14px 16px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 1px 2px rgba(0,0,0,0.03);">
+        <div style="background:{T_CARD}; border:1px solid {T_BORDER}; border-radius:10px; padding:14px 16px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 1px 2px rgba(0,0,0,0.03);">
             <div>
-                <div style="font-size:0.72rem; font-weight:700; color:#64748b; letter-spacing:0.05em; text-transform:uppercase;">MATCH RATE</div>
-                <div style="font-size:1.75rem; font-weight:800; color:#0f172a; line-height:1.2; margin:2px 0;">{rate_str}</div>
-                <div style="font-size:0.72rem; color:#64748b; font-weight:500;">▲ vs last run</div>
+                <div style="font-size:0.72rem; font-weight:700; color:{T_MUTED}; letter-spacing:0.05em; text-transform:uppercase;">MATCH RATE</div>
+                <div style="font-size:1.75rem; font-weight:800; color:{T_TEXT}; line-height:1.2; margin:2px 0;">{rate_str}</div>
+                <div style="font-size:0.72rem; color:{T_MUTED}; font-weight:500;">▲ vs last run</div>
             </div>
-            <div style="width:44px; height:44px; border-radius:8px; background:#fffbeb; color:#f59e0b; display:flex; align-items:center; justify-content:center; font-size:1.3rem;">🎯</div>
+            <div style="width:44px; height:44px; border-radius:8px; background:{T_AMBER_SOFT}; color:{T_AMBER}; display:flex; align-items:center; justify-content:center; font-size:1.3rem;">🎯</div>
         </div>
         """, unsafe_allow_html=True)
+        st.button("📊 Match Summary", key="btn_kpi_rate", disabled=True, use_container_width=True)
 
     st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
 
@@ -364,25 +481,25 @@ if st.session_state.active_view == "Reconciliation":
 
     with col_donut:
         with st.container(border=True):
-            st.markdown('<div style="font-weight:700; font-size:0.95rem; color:#0f172a; margin-bottom:8px;">Match Breakdown</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="font-weight:700; font-size:0.95rem; color:{T_TEXT}; margin-bottom:8px;">Match Breakdown</div>', unsafe_allow_html=True)
             
             donut_svg = _generate_donut_svg(matched_n, review_n, mismatch_n)
             
             st.markdown(f"""
             <div style="display:flex; align-items:center; gap:16px; padding: 4px 0 10px 0;">
                 <div>{donut_svg}</div>
-                <div style="flex:1; font-size:0.82rem; font-weight:600; color:#334155;">
+                <div style="flex:1; font-size:0.82rem; font-weight:600; color:{T_MUTED};">
                     <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
-                        <span><span style="color:#10b981;">■</span> Matched</span>
-                        <span style="font-weight:700; color:#0f172a;">{matched_n}</span>
+                        <span><span style="color:{T_GREEN};">■</span> Matched</span>
+                        <span style="font-weight:700; color:{T_TEXT};">{matched_n}</span>
                     </div>
                     <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
-                        <span><span style="color:#f59e0b;">■</span> Needs review</span>
-                        <span style="font-weight:700; color:#0f172a;">{review_n}</span>
+                        <span><span style="color:{T_AMBER};">■</span> Needs review</span>
+                        <span style="font-weight:700; color:{T_TEXT};">{review_n}</span>
                     </div>
                     <div style="display:flex; justify-content:space-between;">
-                        <span><span style="color:#ef4444;">■</span> Mismatch / Missing</span>
-                        <span style="font-weight:700; color:#0f172a;">{mismatch_n}</span>
+                        <span><span style="color:{T_RED};">■</span> Mismatch / Missing</span>
+                        <span style="font-weight:700; color:{T_TEXT};">{mismatch_n}</span>
                     </div>
                 </div>
             </div>
@@ -390,7 +507,7 @@ if st.session_state.active_view == "Reconciliation":
 
     with col_files:
         with st.container(border=True):
-            st.markdown('<div style="font-weight:700; font-size:0.95rem; color:#0f172a; margin-bottom:4px;">Input Files</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="font-weight:700; font-size:0.95rem; color:{T_TEXT}; margin-bottom:4px;">Input Files</div>', unsafe_allow_html=True)
             
             uploaded_files = st.file_uploader(
                 "Drop Excel / CSV / Bank reports here",
@@ -401,11 +518,11 @@ if st.session_state.active_view == "Reconciliation":
             )
 
             if uploaded_files:
-                st.markdown(f"<div style='font-size:0.8rem; color:#4f46e5; font-weight:700; margin-top:4px;'>📎 {len(uploaded_files)} file(s) attached:</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size:0.8rem; color:{T_PRIMARY}; font-weight:700; margin-top:4px;'>📎 {len(uploaded_files)} file(s) attached:</div>", unsafe_allow_html=True)
                 chips = '<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">'
                 for uf in uploaded_files:
                     sz = len(uf.getvalue()) / 1024
-                    chips += f'<span style="background:#eef2ff; color:#4f46e5; border:1px solid #c7d2fe; padding:3px 8px; border-radius:5px; font-size:0.75rem; font-weight:600;">{uf.name} ({sz:.0f} KB)</span>'
+                    chips += f'<span style="background:{T_PRIMARY_SOFT}; color:{T_PRIMARY}; border:1px solid {T_BORDER}; padding:3px 8px; border-radius:5px; font-size:0.75rem; font-weight:600;">{uf.name} ({sz:.0f} KB)</span>'
                     if not any(f["name"] == uf.name for f in st.session_state.ingested_files_log):
                         st.session_state.ingested_files_log.insert(0, {
                             "name": uf.name,
@@ -485,9 +602,10 @@ if st.session_state.active_view == "Reconciliation":
                 options=["All", "Sales", "Collection"],
                 default="All",
                 label_visibility="collapsed",
+                key="tbl_tab_control",
             )
         with t_c2:
-            search_txt = st.text_input("Filter", placeholder="🔍 Filter records...", label_visibility="collapsed")
+            search_txt = st.text_input("Filter", placeholder="🔍 Filter records...", label_visibility="collapsed", key="table_search_input")
 
         if results_df is not None and not results_df.empty:
             df_view = results_df.copy()
@@ -541,11 +659,11 @@ if st.session_state.active_view == "Reconciliation":
             def style_status(val):
                 s = str(val).lower()
                 if "matched" in s and "not" not in s and "mis" not in s:
-                    return "color: #10b981; font-weight: 700;"
+                    return f"color: {T_GREEN}; font-weight: 700;"
                 elif "missing" in s or "mismatch" in s:
-                    return "color: #ef4444; font-weight: 700;"
+                    return f"color: {T_RED}; font-weight: 700;"
                 elif "review" in s:
-                    return "color: #f59e0b; font-weight: 700;"
+                    return f"color: {T_AMBER}; font-weight: 700;"
                 return ""
 
             styled_t = df_final.style.map(style_status, subset=["Status"])
@@ -583,8 +701,8 @@ if st.session_state.active_view == "Reconciliation":
 # VIEW: DASHBOARD
 # ---------------------------------------------------------------------------
 elif st.session_state.active_view == "Dashboard":
-    st.markdown('<h2 style="font-size:1.45rem; font-weight:800; color:#0f172a;">Dashboard & Audit History</h2>', unsafe_allow_html=True)
-    st.markdown('<div style="font-size:0.8rem; font-weight:600; color:#64748b; margin-bottom:14px;">Audit trail of the last 30 reconciliation runs</div>', unsafe_allow_html=True)
+    st.markdown(f'<h2 style="font-size:1.45rem; font-weight:800; color:{T_TEXT};">Dashboard & Audit History</h2>', unsafe_allow_html=True)
+    st.markdown(f'<div style="font-size:0.8rem; font-weight:600; color:{T_MUTED}; margin-bottom:14px;">Audit trail of the last 30 reconciliation runs</div>', unsafe_allow_html=True)
 
     history = st.session_state.run_history
     if history:
@@ -608,8 +726,8 @@ elif st.session_state.active_view == "Dashboard":
 # VIEW: DATA SOURCES
 # ---------------------------------------------------------------------------
 elif st.session_state.active_view == "Data Sources":
-    st.markdown('<h2 style="font-size:1.45rem; font-weight:800; color:#0f172a;">Ingested Data Sources</h2>', unsafe_allow_html=True)
-    st.markdown('<div style="font-size:0.8rem; font-weight:600; color:#64748b; margin-bottom:14px;">Audit trail of files ingested in this session</div>', unsafe_allow_html=True)
+    st.markdown(f'<h2 style="font-size:1.45rem; font-weight:800; color:{T_TEXT};">Ingested Data Sources</h2>', unsafe_allow_html=True)
+    st.markdown(f'<div style="font-size:0.8rem; font-weight:600; color:{T_MUTED}; margin-bottom:14px;">Audit trail of files ingested in this session</div>', unsafe_allow_html=True)
 
     files_log = st.session_state.ingested_files_log
     if files_log:
@@ -622,8 +740,8 @@ elif st.session_state.active_view == "Data Sources":
 # VIEW: REPORTS
 # ---------------------------------------------------------------------------
 elif st.session_state.active_view == "Reports":
-    st.markdown('<h2 style="font-size:1.45rem; font-weight:800; color:#0f172a;">Executive Reconciliation Reports</h2>', unsafe_allow_html=True)
-    st.markdown('<div style="font-size:0.8rem; font-weight:600; color:#64748b; margin-bottom:14px;">Detailed breakdown tables and styled workbook exports</div>', unsafe_allow_html=True)
+    st.markdown(f'<h2 style="font-size:1.45rem; font-weight:800; color:{T_TEXT};">Executive Reconciliation Reports</h2>', unsafe_allow_html=True)
+    st.markdown(f'<div style="font-size:0.8rem; font-weight:600; color:{T_MUTED}; margin-bottom:14px;">Detailed breakdown tables and styled workbook exports</div>', unsafe_allow_html=True)
 
     results_df = st.session_state.results_df
     if results_df is not None and not results_df.empty:
