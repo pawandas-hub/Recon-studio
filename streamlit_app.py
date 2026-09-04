@@ -1,16 +1,16 @@
-"""Recon Studio v3.0 — High Fidelity Web Edition.
+"""Recon Studio v3.0 — High Fidelity Web Edition (Exact Desktop UI Replica).
 
-Exact replica of Recon Studio v3.0 Desktop UI:
-- Crisp Light Theme matching desktop palette (#f4f6fb background, #ffffff cards, #4f46e5 primary)
-- Left Sidebar with Recon Studio branding, styled navigation buttons, and status footer
-- Top Bar with breadcrumbs, theme switcher pills, Ninjacart branding
-- Main Workspace:
-  - Header: Title, Segmented mode selector (Sales | Collection | Both), Run Reconciliation button
-  - Subtitle: Live IST timestamp, tolerance (±₹1), auto-match info
-  - KPI Cards: Total Records, Matched, Exceptions, Match Rate with icons and contrast text
-  - Middle Row: Match Breakdown Donut chart + Input Files upload container
-  - Results Card: Tabs (All / Sales / Collection), search filter, styled records table
-  - Reports / Dashboard / Data Sources views
+Recreates the exact UI, layout, components, and styling of Recon Studio v3.0 Desktop:
+- Left Sidebar with enlarged Recon Studio branding (68px), navigation items, and SAP status footer
+- Top Bar: Breadcrumb on the left, Theme selector pill and Ninjacart logo on the far right
+- Header: Sales & Collection Reconciliation title with Segmented pills and Run Reconciliation button
+- Subtitle: Live IST clock, tolerance ±₹1, auto-match information
+- 4 Crisp KPI Cards (Total Records, Matched, Exceptions, Match Rate) with pastel icon badges
+- Middle Row:
+  - Left Card: Match Breakdown with inline SVG donut ring chart + color-coded legend
+  - Right Card: Input Files dropzone
+- Bottom Row: Filter Category tabs, Search box, itemized table with status color-coding, Excel/CSV exports
+- Dashboard, Data Sources, Reports views
 """
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ import base64
 import datetime
 import io
 import json
+import math
 import os
 import sys
 import tempfile
@@ -30,7 +31,7 @@ import pandas as pd
 import streamlit as st
 
 # ---------------------------------------------------------------------------
-# Path configuration
+# Path Configuration
 # ---------------------------------------------------------------------------
 _PROJECT_ROOT = Path(__file__).resolve().parent
 if str(_PROJECT_ROOT) not in sys.path:
@@ -40,7 +41,7 @@ from src.services.recon_engine import process_file_list
 from src.export.excel_exporter import ExcelReportExporter
 
 # ---------------------------------------------------------------------------
-# Page setup
+# Page Configuration
 # ---------------------------------------------------------------------------
 st.set_page_config(
     page_title="Recon Studio v3.0",
@@ -50,7 +51,7 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------------------------
-# Helper: Load Logos
+# Helper: Load Base64 Logos
 # ---------------------------------------------------------------------------
 def _load_b64_image(rel_path: str) -> str:
     full_path = _PROJECT_ROOT / rel_path
@@ -64,7 +65,7 @@ NINJACART_LOGO_B64 = _load_b64_image("assets/ninjacart_light.png")
 RECON_LOGO_B64 = _load_b64_image("assets/recon_studio_cropped.png")
 
 # ---------------------------------------------------------------------------
-# Time & Formatting Helpers
+# Time & Number Formatting
 # ---------------------------------------------------------------------------
 def _get_ist_time_str() -> str:
     now_utc = datetime.datetime.now(datetime.timezone.utc)
@@ -96,11 +97,35 @@ def _fmt_inr(n) -> str:
         return str(n)
 
 # ---------------------------------------------------------------------------
-# Global Theme CSS
+# Helper: Inline SVG Donut Chart (Exact Tkinter Canvas replica)
+# ---------------------------------------------------------------------------
+def _generate_donut_svg(matched: int, review: int, mismatch: int) -> str:
+    total = matched + review + mismatch
+    if total == 0:
+        return '<svg width="110" height="110" viewBox="0 0 100 100"><circle cx="50" cy="50" r="38" fill="none" stroke="#e2e8f0" stroke-width="12" /></svg>'
+
+    circ = 2 * math.pi * 38
+    m_len = (matched / total) * circ
+    r_len = (review / total) * circ
+    mis_len = (mismatch / total) * circ
+    offset2 = -m_len
+    offset3 = -(m_len + r_len)
+
+    svg = (
+        f'<svg width="110" height="110" viewBox="0 0 100 100" style="transform: rotate(-90deg);">'
+        f'<circle cx="50" cy="50" r="38" fill="none" stroke="#e2e8f0" stroke-width="12" />'
+        f'<circle cx="50" cy="50" r="38" fill="none" stroke="#10b981" stroke-width="12" stroke-dasharray="{m_len:.1f} {circ:.1f}" />'
+        f'<circle cx="50" cy="50" r="38" fill="none" stroke="#f59e0b" stroke-width="12" stroke-dasharray="{r_len:.1f} {circ:.1f}" stroke-dashoffset="{offset2:.1f}" />'
+        f'<circle cx="50" cy="50" r="38" fill="none" stroke="#ef4444" stroke-width="12" stroke-dasharray="{mis_len:.1f} {circ:.1f}" stroke-dashoffset="{offset3:.1f}" />'
+        f'</svg>'
+    )
+    return svg
+
+# ---------------------------------------------------------------------------
+# Global CSS
 # ---------------------------------------------------------------------------
 st.markdown("""
 <style>
-    /* Global Styles */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
     
     html, body, [class*="css"], .stApp {
@@ -109,38 +134,16 @@ st.markdown("""
         color: #0f172a !important;
     }
 
-    /* Main Container Padding — Generous top spacing so header is never clipped */
+    .block-container {
         padding-top: 4.5rem !important;
         padding-bottom: 2rem !important;
+        max-width: 98% !important;
     }
 
-    /* Top Bar Header */
-    .recon-topbar {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 12px 20px;
-        margin-bottom: 18px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.03);
-    .recon-breadcrumb {
-        font-size: 0.95rem;
-        font-weight: 700;
-        color: #0f172a;
-    }
-    .recon-breadcrumb span {
-        color: #64748b;
-        font-weight: 500;
-    }
-    .recon-topbar-right {
-        display: flex;
-        align-items: center;
-        gap: 16px;
-    }
     .theme-pill {
-        display: inline-flex;
+        display: inline-flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
         background: #f1f5f9;
         border-radius: 6px;
         padding: 3px 6px;
@@ -157,102 +160,23 @@ st.markdown("""
         box-shadow: 0 1px 2px rgba(0,0,0,0.06);
     }
 
-    /* Cards */
-    .recon-card {
-        background: #ffffff !important;
-        border: 1px solid #e2e8f0 !important;
-        border-radius: 10px !important;
-        padding: 16px 18px !important;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.04) !important;
-        margin-bottom: 14px !important;
-    }
-
-    /* KPI Cards */
-    .kpi-box {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 10px;
-        padding: 14px 16px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.03);
-    }
-    .kpi-title {
-        font-size: 0.72rem;
-        font-weight: 700;
-        color: #64748b;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-        margin-bottom: 2px;
-    }
-    .kpi-val {
-        font-size: 1.75rem;
-        font-weight: 800;
-        color: #0f172a;
-        line-height: 1.1;
-    }
-    .kpi-sub {
-        font-size: 0.72rem;
-        color: #64748b;
-        font-weight: 500;
-        margin-top: 3px;
-    }
-    .kpi-badge {
-        width: 42px;
-        height: 42px;
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.25rem;
-    }
-
-    /* Buttons */
-    .stButton > button {
-        border-radius: 6px !important;
-        font-weight: 600 !important;
-        transition: all 0.15s ease !important;
-    }
-    
-    /* Primary Action Button (Indigo) */
     .stButton > button[kind="primary"] {
         background-color: #4f46e5 !important;
         color: #ffffff !important;
         border: none !important;
+        border-radius: 6px !important;
+        font-weight: 700 !important;
         padding: 0.5rem 1.2rem !important;
     }
     .stButton > button[kind="primary"]:hover {
         background-color: #4338ca !important;
     }
 
-    /* Sidebar Navigation Item */
-    .nav-btn {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 10px 14px;
-        border-radius: 6px;
-        font-size: 0.9rem;
-        font-weight: 600;
-        color: #475569;
-        text-decoration: none;
-        cursor: pointer;
-        margin-bottom: 4px;
-    }
-    .nav-btn-active {
-        background: #eef2ff !important;
-        color: #4f46e5 !important;
-        font-weight: 700 !important;
-    }
-    
-    /* Clean Sidebar */
     section[data-testid="stSidebar"] {
         background-color: #ffffff !important;
         border-right: 1px solid #e2e8f0 !important;
     }
     
-    /* Dataframe Table styling */
     .stDataFrame {
         border: 1px solid #e2e8f0 !important;
         border-radius: 8px !important;
@@ -281,23 +205,23 @@ if "elapsed_sec" not in st.session_state:
 # Left Sidebar Navigation
 # ---------------------------------------------------------------------------
 with st.sidebar:
-    # Logo (2 sizes bigger as requested)
+    # Logo (2 sizes bigger — 68px height)
     if RECON_LOGO_B64:
         st.markdown(
-            f'<div style="display:flex; align-items:center; justify-content:center; padding: 10px 0 20px 0;">'
+            f'<div style="display:flex; align-items:center; justify-content:center; padding: 8px 0 18px 0;">'
             f'<img src="{RECON_LOGO_B64}" style="height:68px; max-width:100%; object-fit:contain;" />'
             f'</div>',
             unsafe_allow_html=True,
         )
     else:
         st.markdown(
-            '<div style="font-size:1.6rem; font-weight:800; color:#4f46e5; padding:10px 0 20px 0; text-align:center;">'
+            '<div style="font-size:1.5rem; font-weight:800; color:#4f46e5; padding:8px 0 18px 0; text-align:center;">'
             '📊 Recon Studio'
             '</div>',
             unsafe_allow_html=True,
         )
 
-    # Nav buttons
+    # Navigation buttons
     views = [
         ("Dashboard", "📊  Dashboard"),
         ("Reconciliation", "🔄  Reconciliation"),
@@ -322,7 +246,7 @@ with st.sidebar:
     )
 
 # ---------------------------------------------------------------------------
-# Top Bar (Guaranteed Left-Right Alignment using Native Columns)
+# Top Bar (Breadcrumbs on left, Theme Pill + Ninjacart on right)
 # ---------------------------------------------------------------------------
 ninja_logo_html = f'<img src="{NINJACART_LOGO_B64}" style="height:26px; vertical-align:middle;" />' if NINJACART_LOGO_B64 else '<span style="font-weight:800; color:#0f172a;">ninjacart</span>'
 
@@ -350,7 +274,7 @@ with st.container(border=True):
 if st.session_state.active_view == "Reconciliation":
 
     # Header Row: Title + Segment Toggle + Run Button
-    h_col1, h_col2, h_col3 = st.columns([3, 2, 1.3])
+    h_col1, h_col2, h_col3 = st.columns([3.2, 1.8, 1.4])
     
     with h_col1:
         st.markdown('<h2 style="font-size:1.45rem; font-weight:800; margin:0 0 2px 0; color:#0f172a;">Sales & Collection Reconciliation</h2>', unsafe_allow_html=True)
@@ -372,7 +296,7 @@ if st.session_state.active_view == "Reconciliation":
         run_reconcile = st.button("▶  Run Reconciliation", type="primary", use_container_width=True)
 
     # -----------------------------------------------------------------------
-    # Row 1: KPI Cards
+    # Row 1: 4 KPI Cards (Distinct White Cards with Shadow & Badges)
     # -----------------------------------------------------------------------
     results_df = st.session_state.results_df
     total_n = len(results_df) if results_df is not None and not results_df.empty else 0
@@ -385,101 +309,81 @@ if st.session_state.active_view == "Reconciliation":
     k1, k2, k3, k4 = st.columns(4)
     with k1:
         st.markdown(f"""
-        <div class="kpi-box">
+        <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:14px 16px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 1px 2px rgba(0,0,0,0.03);">
             <div>
-                <div class="kpi-title">TOTAL RECORDS</div>
-                <div class="kpi-val">{total_n:,}</div>
-                <div class="kpi-sub">▲ click to view all records</div>
+                <div style="font-size:0.72rem; font-weight:700; color:#64748b; letter-spacing:0.05em; text-transform:uppercase;">TOTAL RECORDS</div>
+                <div style="font-size:1.75rem; font-weight:800; color:#0f172a; line-height:1.2; margin:2px 0;">{total_n:,}</div>
+                <div style="font-size:0.72rem; color:#64748b; font-weight:500;">▲ click to view all records</div>
             </div>
-            <div class="kpi-badge" style="background:#eef2ff; color:#4f46e5;">📄</div>
+            <div style="width:44px; height:44px; border-radius:8px; background:#eef2ff; color:#4f46e5; display:flex; align-items:center; justify-content:center; font-size:1.3rem;">📄</div>
         </div>
         """, unsafe_allow_html=True)
 
     with k2:
         st.markdown(f"""
-        <div class="kpi-box">
+        <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:14px 16px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 1px 2px rgba(0,0,0,0.03);">
             <div>
-                <div class="kpi-title">MATCHED</div>
-                <div class="kpi-val">{matched_n:,}</div>
-                <div class="kpi-sub">▲ click to view matched</div>
+                <div style="font-size:0.72rem; font-weight:700; color:#64748b; letter-spacing:0.05em; text-transform:uppercase;">MATCHED</div>
+                <div style="font-size:1.75rem; font-weight:800; color:#0f172a; line-height:1.2; margin:2px 0;">{matched_n:,}</div>
+                <div style="font-size:0.72rem; color:#64748b; font-weight:500;">▲ click to view matched</div>
             </div>
-            <div class="kpi-badge" style="background:#ecfdf5; color:#10b981;">☑️</div>
+            <div style="width:44px; height:44px; border-radius:8px; background:#ecfdf5; color:#10b981; display:flex; align-items:center; justify-content:center; font-size:1.3rem;">☑️</div>
         </div>
         """, unsafe_allow_html=True)
 
     with k3:
         st.markdown(f"""
-        <div class="kpi-box">
+        <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:14px 16px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 1px 2px rgba(0,0,0,0.03);">
             <div>
-                <div class="kpi-title">EXCEPTIONS</div>
-                <div class="kpi-val">{exceptions_n:,}</div>
-                <div class="kpi-sub">▼ click to view exceptions</div>
+                <div style="font-size:0.72rem; font-weight:700; color:#64748b; letter-spacing:0.05em; text-transform:uppercase;">EXCEPTIONS</div>
+                <div style="font-size:1.75rem; font-weight:800; color:#0f172a; line-height:1.2; margin:2px 0;">{exceptions_n:,}</div>
+                <div style="font-size:0.72rem; color:#64748b; font-weight:500;">▼ click to view exceptions</div>
             </div>
-            <div class="kpi-badge" style="background:#fef2f2; color:#ef4444;">⚠️</div>
+            <div style="width:44px; height:44px; border-radius:8px; background:#fef2f2; color:#ef4444; display:flex; align-items:center; justify-content:center; font-size:1.3rem;">⚠️</div>
         </div>
         """, unsafe_allow_html=True)
 
     with k4:
         st.markdown(f"""
-        <div class="kpi-box">
+        <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:14px 16px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 1px 2px rgba(0,0,0,0.03);">
             <div>
-                <div class="kpi-title">MATCH RATE</div>
-                <div class="kpi-val">{rate_str}</div>
-                <div class="kpi-sub">▲ vs last run</div>
+                <div style="font-size:0.72rem; font-weight:700; color:#64748b; letter-spacing:0.05em; text-transform:uppercase;">MATCH RATE</div>
+                <div style="font-size:1.75rem; font-weight:800; color:#0f172a; line-height:1.2; margin:2px 0;">{rate_str}</div>
+                <div style="font-size:0.72rem; color:#64748b; font-weight:500;">▲ vs last run</div>
             </div>
-            <div class="kpi-badge" style="background:#fffbeb; color:#f59e0b;">🎯</div>
+            <div style="width:44px; height:44px; border-radius:8px; background:#fffbeb; color:#f59e0b; display:flex; align-items:center; justify-content:center; font-size:1.3rem;">🎯</div>
         </div>
         """, unsafe_allow_html=True)
 
-    st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
 
     # -----------------------------------------------------------------------
-    # Row 2: Match Breakdown + Input Files
+    # Row 2: Match Breakdown (SVG Donut) + Input Files (Dropzone)
     # -----------------------------------------------------------------------
     col_donut, col_files = st.columns([1, 2])
 
     with col_donut:
         with st.container(border=True):
-            st.markdown('<div style="font-weight:700; font-size:0.95rem; color:#0f172a; margin-bottom:4px;">Match Breakdown</div>', unsafe_allow_html=True)
+            st.markdown('<div style="font-weight:700; font-size:0.95rem; color:#0f172a; margin-bottom:8px;">Match Breakdown</div>', unsafe_allow_html=True)
             
-            try:
-                import plotly.graph_objects as go
-                labels = ["Matched", "Needs review", "Mismatch / Missing"]
-                values = [matched_n if total_n else 1, review_n if total_n else 0, mismatch_n if total_n else 0]
-                colors = ["#10b981", "#f59e0b", "#ef4444"]
-                
-                fig = go.Figure(data=[go.Pie(
-                    labels=labels,
-                    values=values,
-                    hole=0.68,
-                    marker=dict(colors=colors),
-                    textinfo="none",
-                    hoverinfo="label+value+percent" if total_n else "none",
-                    showlegend=False,
-                )])
-                fig.update_layout(
-                    height=130,
-                    margin=dict(l=0, r=0, t=4, b=4),
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    plot_bgcolor="rgba(0,0,0,0)",
-                )
-                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-            except Exception:
-                pass
-
+            donut_svg = _generate_donut_svg(matched_n, review_n, mismatch_n)
+            
             st.markdown(f"""
-            <div style="font-size:0.8rem; font-weight:600; color:#334155; margin-top:2px;">
-                <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
-                    <span><span style="color:#10b981;">■</span> Matched</span>
-                    <span style="font-weight:700; color:#0f172a;">{matched_n}</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
-                    <span><span style="color:#f59e0b;">■</span> Needs review</span>
-                    <span style="font-weight:700; color:#0f172a;">{review_n}</span>
-                </div>
-                <div style="display:flex; justify-content:space-between;">
-                    <span><span style="color:#ef4444;">■</span> Mismatch / Missing</span>
-                    <span style="font-weight:700; color:#0f172a;">{mismatch_n}</span>
+            <div style="display:flex; align-items:center; gap:16px; padding: 4px 0 10px 0;">
+                <div>{donut_svg}</div>
+                <div style="flex:1; font-size:0.82rem; font-weight:600; color:#334155;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                        <span><span style="color:#10b981;">■</span> Matched</span>
+                        <span style="font-weight:700; color:#0f172a;">{matched_n}</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                        <span><span style="color:#f59e0b;">■</span> Needs review</span>
+                        <span style="font-weight:700; color:#0f172a;">{review_n}</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between;">
+                        <span><span style="color:#ef4444;">■</span> Mismatch / Missing</span>
+                        <span style="font-weight:700; color:#0f172a;">{mismatch_n}</span>
+                    </div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
