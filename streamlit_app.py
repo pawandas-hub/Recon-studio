@@ -164,6 +164,68 @@ st.markdown(f"""
         border: 1px solid {T_BORDER} !important;
     }}
 
+    /* File Uploader Dropzone */
+    section[data-testid="stFileUploaderDropzone"], [data-testid="stFileUploader"] section {{
+        background-color: {T_CARD} !important;
+        border: 2px dashed {T_BORDER} !important;
+        border-radius: 8px !important;
+        color: {T_TEXT} !important;
+    }}
+    section[data-testid="stFileUploaderDropzone"] span, 
+    section[data-testid="stFileUploaderDropzone"] div, 
+    section[data-testid="stFileUploaderDropzone"] p,
+    section[data-testid="stFileUploaderDropzone"] small {{
+        color: {T_MUTED} !important;
+    }}
+    section[data-testid="stFileUploaderDropzone"] button {{
+        background-color: {T_PRIMARY} !important;
+        color: #ffffff !important;
+        border: none !important;
+        font-weight: 600 !important;
+    }}
+
+    /* Text & Search Inputs */
+    div[data-baseweb="input"], div[data-baseweb="base-input"], div[data-baseweb="input"] input {{
+        background-color: {T_CARD} !important;
+        color: {T_TEXT} !important;
+        border-color: {T_BORDER} !important;
+        -webkit-text-fill-color: {T_TEXT} !important;
+        border-radius: 6px !important;
+    }}
+    div[data-baseweb="input"] input::placeholder {{
+        color: {T_MUTED} !important;
+        -webkit-text-fill-color: {T_MUTED} !important;
+    }}
+
+    /* Segmented Controls (Sales/Coll/Both & Theme) */
+    div[data-testid="stSegmentedControl"] {{
+        background-color: {T_SLATE_SOFT} !important;
+        border: 1px solid {T_BORDER} !important;
+        border-radius: 8px !important;
+        padding: 3px !important;
+    }}
+    div[data-testid="stSegmentedControl"] button {{
+        background-color: transparent !important;
+        color: {T_MUTED} !important;
+        font-weight: 600 !important;
+        border: none !important;
+        border-radius: 6px !important;
+    }}
+    div[data-testid="stSegmentedControl"] button[aria-checked="true"], 
+    div[data-testid="stSegmentedControl"] button[data-checked="true"] {{
+        background-color: {T_CARD} !important;
+        color: {T_PRIMARY} !important;
+        font-weight: 700 !important;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important;
+    }}
+
+    /* Card Containers */
+    div[data-testid="stVerticalBlockBorderWrapper"] {{
+        background-color: {T_CARD} !important;
+        border-color: {T_BORDER} !important;
+        border-radius: 10px !important;
+    }}
+
     /* Dataframe Table styling */
     .stDataFrame {{
         border: 1px solid {T_BORDER} !important;
