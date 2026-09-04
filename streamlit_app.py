@@ -116,19 +116,15 @@ st.markdown("""
 
     /* Top Bar Header */
     .recon-topbar {
-        display: flex !important;
-        flex-direction: row !important;
-        justify-content: space-between !important;
-        align-items: center !important;
-        width: 100% !important;
-        background: #ffffff !important;
-        border: 1px solid #e2e8f0 !important;
-        border-radius: 8px !important;
-        padding: 10px 18px !important;
-        margin-bottom: 18px !important;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.03) !important;
-        box-sizing: border-box !important;
-    }
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 12px 20px;
+        margin-bottom: 18px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.03);
     .recon-breadcrumb {
         font-size: 0.95rem;
         font-weight: 700;
@@ -139,15 +135,12 @@ st.markdown("""
         font-weight: 500;
     }
     .recon-topbar-right {
-        display: flex !important;
-        flex-direction: row !important;
-        align-items: center !important;
-        gap: 16px !important;
+        display: flex;
+        align-items: center;
+        gap: 16px;
     }
     .theme-pill {
-        display: inline-flex !important;
-        flex-direction: row !important;
-        align-items: center !important;
+        display: inline-flex;
         background: #f1f5f9;
         border-radius: 6px;
         padding: 3px 6px;
@@ -288,17 +281,17 @@ if "elapsed_sec" not in st.session_state:
 # Left Sidebar Navigation
 # ---------------------------------------------------------------------------
 with st.sidebar:
-    # Logo
+    # Logo (2 sizes bigger as requested)
     if RECON_LOGO_B64:
         st.markdown(
-            f'<div style="display:flex; align-items:center; gap:10px; padding: 6px 0 16px 0;">'
-            f'<img src="{RECON_LOGO_B64}" style="height:38px;" />'
+            f'<div style="display:flex; align-items:center; justify-content:center; padding: 10px 0 20px 0;">'
+            f'<img src="{RECON_LOGO_B64}" style="height:68px; max-width:100%; object-fit:contain;" />'
             f'</div>',
             unsafe_allow_html=True,
         )
     else:
         st.markdown(
-            '<div style="font-size:1.3rem; font-weight:800; color:#4f46e5; padding:6px 0 16px 0;">'
+            '<div style="font-size:1.6rem; font-weight:800; color:#4f46e5; padding:10px 0 20px 0; text-align:center;">'
             '📊 Recon Studio'
             '</div>',
             unsafe_allow_html=True,
@@ -320,7 +313,7 @@ with st.sidebar:
             st.rerun()
 
     # Footer
-    st.markdown("<div style='height: 280px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height: 240px;'></div>", unsafe_allow_html=True)
     st.markdown(
         "<div style='font-size:0.8rem; color:#64748b; padding:12px 2px; border-top:1px solid #e2e8f0; font-weight:500;'>"
         "v3.0 · Connected to SAP ✔"
@@ -329,27 +322,27 @@ with st.sidebar:
     )
 
 # ---------------------------------------------------------------------------
-# Top Bar
+# Top Bar (Guaranteed Left-Right Alignment using Native Columns)
 # ---------------------------------------------------------------------------
-ninja_logo_html = f'<img src="{NINJACART_LOGO_B64}" style="height:24px;" />' if NINJACART_LOGO_B64 else '<span style="font-weight:800; color:#0f172a;">ninjacart</span>'
+ninja_logo_html = f'<img src="{NINJACART_LOGO_B64}" style="height:26px; vertical-align:middle;" />' if NINJACART_LOGO_B64 else '<span style="font-weight:800; color:#0f172a;">ninjacart</span>'
 
-st.markdown(f"""
-<div class="recon-topbar">
-    <div class="recon-breadcrumb">
-        Recon Studio &rsaquo; <span>{st.session_state.active_view}</span>
-    </div>
-    <div class="recon-topbar-right">
-        <div class="theme-pill">
-            <span class="theme-pill-active">💻 Auto</span>
-            <span>☀️ Light</span>
-            <span>🌙 Dark</span>
-        </div>
-        <div>
-            {ninja_logo_html}
-        </div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
+with st.container(border=True):
+    top_c1, top_c2 = st.columns([3, 1.2])
+    with top_c1:
+        st.markdown(
+            f'<div style="font-size: 0.95rem; font-weight: 700; color: #0f172a; padding: 4px 0;">'
+            f'Recon Studio &rsaquo; <span style="color: #64748b; font-weight: 500;">{st.session_state.active_view}</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+    with top_c2:
+        st.markdown(
+            f'<div style="display:flex; justify-content:flex-end; align-items:center; gap:12px;">'
+            f'<div class="theme-pill"><span class="theme-pill-active">💻 Auto</span><span>☀️ Light</span><span>🌙 Dark</span></div>'
+            f'<div>{ninja_logo_html}</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
 # ---------------------------------------------------------------------------
 # VIEW: RECONCILIATION
