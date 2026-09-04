@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import base64
 import datetime
+import html as html_mod
 import io
 import json
 import math
 import os
+import shutil
 import sys
 import tempfile
 import time
@@ -251,8 +253,22 @@ def _get_ist_time_str() -> str:
     ist = now_utc + datetime.timedelta(hours=5, minutes=30)
     return ist.strftime("%A, %d %b %Y - %I:%M:%S %p (IST)")
 
+def _first_valid(*vals):
+    """Return the first non-null, non-empty value. Handles np.nan correctly."""
+    for v in vals:
+        if v is None:
+            continue
+        if isinstance(v, float) and math.isnan(v):
+            continue
+        if str(v).strip() == "" or str(v).strip().lower() == "nan":
+            continue
+        return v
+    return ""
+
 def _fmt_inr(n) -> str:
     try:
+        if n is None or (isinstance(n, float) and math.isnan(n)):
+            return "—"
         v = float(n)
         if abs(v) < 0.01:
             return "—"
@@ -472,8 +488,9 @@ if st.session_state.active_view == "Reconciliation":
     # -----------------------------------------------------------------------
     results_df = st.session_state.results_df
     total_n = len(results_df) if results_df is not None and not results_df.empty else 0
-    matched_n = int((results_df["Overall_Status"] == "Matched").sum()) if total_n else 0
-    review_n = int(results_df["Overall_Status"].str.contains("review", case=False, na=False).sum()) if total_n else 0
+    has_status_col = total_n and "Overall_Status" in results_df.columns
+    matched_n = int((results_df["Overall_Status"] == "Matched").sum()) if has_status_col else 0
+    review_n = int(results_df["Overall_Status"].str.contains("review", case=False, na=False).sum()) if has_status_col else 0
     exceptions_n = total_n - matched_n if total_n else 0
     mismatch_n = max(0, exceptions_n - review_n)
     rate_str = f"{matched_n / total_n * 100:.1f}%" if total_n else "0%"
@@ -583,8 +600,9 @@ if st.session_state.active_view == "Reconciliation":
                 st.markdown(f"<div style='font-size:0.8rem; color:{T_PRIMARY}; font-weight:700; margin-top:4px;'>📎 {len(uploaded_files)} file(s) attached:</div>", unsafe_allow_html=True)
                 chips = '<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">'
                 for uf in uploaded_files:
-                    sz = len(uf.getvalue()) / 1024
-                    chips += f'<span style="background:{T_PRIMARY_SOFT}; color:{T_PRIMARY}; border:1px solid {T_BORDER}; padding:3px 8px; border-radius:5px; font-size:0.75rem; font-weight:600;">{uf.name} ({sz:.0f} KB)</span>'
+                    sz = uf.size / 1024
+                    safe_name = html_mod.escape(uf.name)
+                    chips += f'<span style="background:{T_PRIMARY_SOFT}; color:{T_PRIMARY}; border:1px solid {T_BORDER}; padding:3px 8px; border-radius:5px; font-size:0.75rem; font-weight:600;">{safe_name} ({sz:.0f} KB)</span>'
                     if not any(f["name"] == uf.name for f in st.session_state.ingested_files_log):
                         st.session_state.ingested_files_log.insert(0, {
                             "name": uf.name,
@@ -605,8 +623,9 @@ if st.session_state.active_view == "Reconciliation":
                 t_start = time.monotonic()
                 temp_dir = tempfile.mkdtemp(prefix="recon_")
                 paths = []
-                for uf in uploaded_files:
-                    p = os.path.join(temp_dir, uf.name)
+                for i, uf in enumerate(uploaded_files):
+                    safe_name = os.path.basename(uf.name) or f"file_{i}"
+                    p = os.path.join(temp_dir, f"{i}_{safe_name}")
                     with open(p, "wb") as f:
                         f.write(uf.getbuffer())
                     paths.append(p)
@@ -628,28 +647,29 @@ if st.session_state.active_view == "Reconciliation":
                     st.session_state.results_df = res
                     st.session_state.elapsed_sec = elapsed
 
-                    # Record run in history
+                    # Record run in history (safe column access)
+                    has_status = "Overall_Status" in res.columns if not res.empty else False
+                    matched_count = int((res["Overall_Status"] == "Matched").sum()) if has_status else 0
+                    total_count = len(res)
                     st.session_state.run_history.insert(0, {
                         "timestamp": _get_ist_time_str(),
                         "mode": st.session_state.active_segment,
                         "files": len(uploaded_files),
-                        "total": len(res),
-                        "matched": int((res["Overall_Status"] == "Matched").sum()),
-                        "exceptions": len(res) - int((res["Overall_Status"] == "Matched").sum()),
-                        "match_rate": f"{int((res['Overall_Status'] == 'Matched').sum()) / len(res) * 100:.1f}%" if len(res) else "0%",
+                        "total": total_count,
+                        "matched": matched_count,
+                        "exceptions": total_count - matched_count,
+                        "match_rate": f"{matched_count / total_count * 100:.1f}%" if total_count else "0%",
                         "elapsed": f"{elapsed:.1f}s",
                     })
+                    # Cap history at 30 entries as stated in UI
+                    st.session_state.run_history = st.session_state.run_history[:30]
 
                     st.toast(f"✅ Reconciled {len(res):,} records in {elapsed:.1f}s")
                     st.rerun()
                 except Exception as err:
                     st.error(f"Processing error: {str(err)}")
                 finally:
-                    for p in paths:
-                        try:
-                            os.unlink(p)
-                        except OSError:
-                            pass
+                    shutil.rmtree(temp_dir, ignore_errors=True)
 
     st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
 
@@ -688,21 +708,21 @@ if st.session_state.active_view == "Reconciliation":
             for _, row in df_view.iterrows():
                 rtype = row.get("Recon_Type", "Sales")
                 if rtype == "Sales":
-                    ref = row.get("RefId_Ref1") or row.get("Ref2_Invoice_No") or row.get("Reference") or ""
-                    bu = row.get("Business_Unit", "")
-                    posting = str(row.get("Posting_Date", ""))
+                    ref = _first_valid(row.get("RefId_Ref1"), row.get("Ref2_Invoice_No"), row.get("Reference"))
+                    bu = _first_valid(row.get("Business_Unit"))
+                    posting = str(_first_valid(row.get("Posting_Date")))
                     sap_amt = _fmt_inr(row.get("Total_CD_LC", 0))
                     book_amt = _fmt_inr(row.get("Total_Sales_Value", 0))
                 else:
-                    ref = row.get("Bank_UTR", "")
-                    bu = row.get("Bank_Name", "")
-                    posting = str(row.get("SAP_Posting_Date", ""))
+                    ref = _first_valid(row.get("Bank_UTR"))
+                    bu = _first_valid(row.get("Bank_Name"))
+                    posting = str(_first_valid(row.get("SAP_Posting_Date")))
                     sap_amt = _fmt_inr(row.get("SAP_Amount", 0))
                     book_amt = _fmt_inr(row.get("Bank_Amount", 0))
 
                 var_val = row.get("Amount_Variance", 0)
-                status = str(row.get("Overall_Status", ""))
-                remarks = str(row.get("Reconciliation_Remarks", ""))
+                status = str(_first_valid(row.get("Overall_Status")))
+                remarks = str(_first_valid(row.get("Reconciliation_Remarks")))
 
                 records.append({
                     "Source": rtype,
@@ -711,7 +731,7 @@ if st.session_state.active_view == "Reconciliation":
                     "SAP Posting": posting,
                     "SAP Amount": sap_amt,
                     "Book Amount": book_amt,
-                    "Variance": _fmt_inr(var_val) if var_val else "—",
+                    "Variance": _fmt_inr(var_val),
                     "Status": status,
                     "Remarks": remarks,
                 })
@@ -735,10 +755,18 @@ if st.session_state.active_view == "Reconciliation":
             d_c1, d_c2, _ = st.columns([1.5, 1.5, 3])
             with d_c1:
                 exporter = ExcelReportExporter()
-                with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
-                    exporter.export(tmp.name, results_df)
-                    with open(tmp.name, "rb") as f:
+                tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+                tmp_path = tmp.name
+                tmp.close()
+                try:
+                    exporter.export(tmp_path, results_df)
+                    with open(tmp_path, "rb") as f:
                         xl_bytes = f.read()
+                finally:
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
                 st.download_button(
                     "📊  Export Excel Report",
                     data=xl_bytes,
@@ -819,10 +847,18 @@ elif st.session_state.active_view == "Reports":
             st.markdown("### 🏦 Collection Breakdown by Bank")
             st.dataframe(coll_summary, use_container_width=True)
 
-        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
-            exporter.export(tmp.name, results_df)
-            with open(tmp.name, "rb") as f:
+        tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+        tmp_path = tmp.name
+        tmp.close()
+        try:
+            exporter.export(tmp_path, results_df)
+            with open(tmp_path, "rb") as f:
                 xl_bytes = f.read()
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
         st.download_button(
             "📥  Download Executive Report Workbook (.xlsx)",
             data=xl_bytes,

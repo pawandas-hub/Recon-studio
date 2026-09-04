@@ -16,7 +16,7 @@ BANK_UTR_COLUMNS = [
 BANK_DESCRIPTION_COLUMNS = ["Description", "Transaction Remarks", "Narration", "Transaction Details", "Particulars", "Remarks"]
 BANK_AMOUNT_COLUMNS = [
     "Deposit Amt (INR)", "Deposit Amount", "Deposit", "Credit Amount", "Credit", "Amount (INR)", "Amount",
-    "NetPayout", "Deno Total", "Deno Total", "Total"
+    "NetPayout", "Deno Total", "Total"
 ]
 BANK_DATE_COLUMNS = ["ActionDate", "Transaction Date", "Txn Date", "Date", "Value Date", "Transaction Posted Date", "Posting Date"]
 BANK_STATUS_COLUMNS = ["Txn Status", "Transaction Status", "Status"]
@@ -226,7 +226,7 @@ def reconcile_bank_to_sap(
     elif bank_type.upper() == "CMS":
         if bank_account_col and account_number:
             account_pattern = str(account_number).strip()
-            bank_df = bank_df[bank_df[bank_account_col].astype(str).str.contains(account_pattern, na=False)].copy()
+            bank_df = bank_df[bank_df[bank_account_col].astype(str).str.contains(account_pattern, regex=False, na=False)].copy()
         if bank_utr_col:
             bank_df["Bank_UTR"] = bank_df[bank_utr_col].apply(_normalise_utr)
         else:
@@ -307,7 +307,7 @@ def reconcile_bank_to_sap(
 
             bank_amount = float(clean_signed_number(bank_row[bank_amt_col])) if bank_amt_col else 0.0
             bank_amount = abs(bank_amount)
-            bank_date = str(parse_date_series(pd.Series([bank_row[bank_date_col]]), dayfirst=True).iloc[0]) if bank_date_col else "Missing Bank Date"
+            bank_date = str(bank_row.get("Bank_Date", "Missing Bank Date")) if bank_date_col else "Missing Bank Date"
             if entry and "candidates" in entry:
                 selected_entry = _select_sap_candidates(entry["candidates"], bank_amount, bank_date)
                 selected_entry["reversal"] = entry.get("reversal", "")

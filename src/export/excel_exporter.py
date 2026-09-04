@@ -8,6 +8,11 @@ from openpyxl.utils import get_column_letter
 
 from ..core.constants import STYLE_CONFIG
 
+def _sanitize_cell_value(value):
+    if isinstance(value, str) and value.startswith(('=', '+', '-', '@')):
+        return f"'{value}"
+    return value
+
 
 class ExcelReportExporter:
     """Exports structured reconciliation results and KPI summaries to styled Excel workbooks."""
@@ -384,7 +389,7 @@ class ExcelReportExporter:
 
                 for row_idx, (_, row_data) in enumerate(table_df.iterrows(), start_row + 1):
                     for col_idx, value in enumerate(row_data, 1):
-                        cell = ws_summary.cell(row=row_idx, column=col_idx, value=value)
+                        cell = ws_summary.cell(row=row_idx, column=col_idx, value=_sanitize_cell_value(value))
                         cell.border = thin_border
                         cell.alignment = Alignment(horizontal='center', vertical='center')
 

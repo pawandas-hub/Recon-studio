@@ -39,6 +39,9 @@ def read_file_tables(file_path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
 
     result = _read_uncached(abs_path)
     _FILE_CACHE[cache_key] = (result[0].copy(), result[1].copy())
+    # Limit cache to 20 entries to prevent memory leak
+    while len(_FILE_CACHE) > 20:
+        _FILE_CACHE.pop(next(iter(_FILE_CACHE)))
     return result
 
 
@@ -63,6 +66,9 @@ def _read_uncached(file_path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
                     lower = name.lower()
                     if not lower.endswith(('.xls', '.xlsx', '.xlsm', '.csv', '.tsv')):
                         continue
+                    info = zf.getinfo(name)
+                    if info.file_size > 100 * 1024 * 1024:  # 100 MB safety limit
+                        continue
                     payload = zf.read(name)
                     if lower.endswith(('.csv', '.tsv')):
                         sep = '\t' if lower.endswith('.tsv') else ','
@@ -78,23 +84,26 @@ def _read_uncached(file_path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
                     if lower.endswith(('.xls', '.xlsx', '.xlsm')):
                         for engine in [None, 'openpyxl', 'calamine', 'xlrd']:
                             try:
-                                excel_file = pd.ExcelFile(io.BytesIO(payload), engine=engine)
-                                sheets = excel_file.sheet_names
-                                if len(sheets) > 1:
-                                    bu_sheet = find_best_sheet(sheets, ["BU", "SAP", "Journal", "24", "14"], fallback_idx=0)
-                                    db_sheet = find_best_sheet(sheets, ["result", "DB", "Sales", "Database", "Raw", "Retailer", "FnV", "Sheet1"], fallback_idx=1)
-                                    df_bu = pd.read_excel(excel_file, sheet_name=bu_sheet)
-                                    df_db = pd.read_excel(excel_file, sheet_name=db_sheet)
-                                else:
-                                    raw = pd.read_excel(excel_file, sheet_name=sheets[0], header=None)
-                                    header_row = _find_table_header(raw)
-                                    df_bu = pd.read_excel(excel_file, sheet_name=sheets[0], header=header_row)
-                                    df_db = df_bu.copy()
-                                    account_number = _find_account_number(raw)
-                                    if account_number:
-                                        df_bu.attrs["account_number"] = account_number
-                                        df_db.attrs["account_number"] = account_number
-                                return df_bu, df_db
+                                try:
+                                    excel_file = pd.ExcelFile(io.BytesIO(payload), engine=engine)
+                                    sheets = excel_file.sheet_names
+                                    if len(sheets) > 1:
+                                        bu_sheet = find_best_sheet(sheets, ["BU", "SAP", "Journal", "24", "14"], fallback_idx=0)
+                                        db_sheet = find_best_sheet(sheets, ["result", "DB", "Sales", "Database", "Raw", "Retailer", "FnV", "Sheet1"], fallback_idx=1)
+                                        df_bu = pd.read_excel(excel_file, sheet_name=bu_sheet)
+                                        df_db = pd.read_excel(excel_file, sheet_name=db_sheet)
+                                    else:
+                                        raw = pd.read_excel(excel_file, sheet_name=sheets[0], header=None)
+                                        header_row = _find_table_header(raw)
+                                        df_bu = pd.read_excel(excel_file, sheet_name=sheets[0], header=header_row)
+                                        df_db = df_bu.copy()
+                                        account_number = _find_account_number(raw)
+                                        if account_number:
+                                            df_bu.attrs["account_number"] = account_number
+                                            df_db.attrs["account_number"] = account_number
+                                    return df_bu, df_db
+                                finally:
+                                    excel_file.close()
                             except Exception:
                                 continue
         except Exception:
@@ -115,23 +124,26 @@ def _read_uncached(file_path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
     if magic.startswith(b"PK\x03\x04") or file_path.lower().endswith((".xlsx", ".xlsm")):
         for engine in [None, "openpyxl", "calamine"]:
             try:
-                excel_file = pd.ExcelFile(file_path, engine=engine)
-                sheets = excel_file.sheet_names
-                if len(sheets) > 1:
-                    bu_sheet = find_best_sheet(sheets, ["BU", "SAP", "Journal", "24", "14"], fallback_idx=0)
-                    db_sheet = find_best_sheet(sheets, ["result", "DB", "Sales", "Database", "Raw", "Retailer", "FnV", "Sheet1"], fallback_idx=1)
-                    df_bu = pd.read_excel(excel_file, sheet_name=bu_sheet)
-                    df_db = pd.read_excel(excel_file, sheet_name=db_sheet)
-                else:
-                    raw = pd.read_excel(file_path, sheet_name=sheets[0], header=None)
-                    header_row = _find_table_header(raw)
-                    df_bu = pd.read_excel(file_path, sheet_name=sheets[0], header=header_row)
-                    df_db = df_bu.copy()
-                    account_number = _find_account_number(raw)
-                    if account_number:
-                        df_bu.attrs["account_number"] = account_number
-                        df_db.attrs["account_number"] = account_number
-                return df_bu, df_db
+                try:
+                    excel_file = pd.ExcelFile(file_path, engine=engine)
+                    sheets = excel_file.sheet_names
+                    if len(sheets) > 1:
+                        bu_sheet = find_best_sheet(sheets, ["BU", "SAP", "Journal", "24", "14"], fallback_idx=0)
+                        db_sheet = find_best_sheet(sheets, ["result", "DB", "Sales", "Database", "Raw", "Retailer", "FnV", "Sheet1"], fallback_idx=1)
+                        df_bu = pd.read_excel(excel_file, sheet_name=bu_sheet)
+                        df_db = pd.read_excel(excel_file, sheet_name=db_sheet)
+                    else:
+                        raw = pd.read_excel(file_path, sheet_name=sheets[0], header=None)
+                        header_row = _find_table_header(raw)
+                        df_bu = pd.read_excel(file_path, sheet_name=sheets[0], header=header_row)
+                        df_db = df_bu.copy()
+                        account_number = _find_account_number(raw)
+                        if account_number:
+                            df_bu.attrs["account_number"] = account_number
+                            df_db.attrs["account_number"] = account_number
+                    return df_bu, df_db
+                finally:
+                    excel_file.close()
             except Exception:
                 continue
 
@@ -160,23 +172,26 @@ def _read_uncached(file_path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
     # 6. General fallback Excel engines
     for engine in [None, "openpyxl", "xlrd", "pyxlsb", "calamine"]:
         try:
-            excel_file = pd.ExcelFile(file_path, engine=engine)
-            sheets = excel_file.sheet_names
-            if len(sheets) > 1:
-                bu_sheet = find_best_sheet(sheets, ["BU", "SAP", "Journal", "24", "14"], fallback_idx=0)
-                db_sheet = find_best_sheet(sheets, ["result", "DB", "Sales", "Database", "Raw", "Retailer", "FnV", "Sheet1"], fallback_idx=1)
-                df_bu = pd.read_excel(excel_file, sheet_name=bu_sheet)
-                df_db = pd.read_excel(excel_file, sheet_name=db_sheet)
-            else:
-                raw = pd.read_excel(file_path, sheet_name=sheets[0], header=None)
-                header_row = _find_table_header(raw)
-                df_bu = pd.read_excel(file_path, sheet_name=sheets[0], header=header_row)
-                df_db = df_bu.copy()
-                account_number = _find_account_number(raw)
-                if account_number:
-                    df_bu.attrs["account_number"] = account_number
-                    df_db.attrs["account_number"] = account_number
-            return df_bu, df_db
+            try:
+                excel_file = pd.ExcelFile(file_path, engine=engine)
+                sheets = excel_file.sheet_names
+                if len(sheets) > 1:
+                    bu_sheet = find_best_sheet(sheets, ["BU", "SAP", "Journal", "24", "14"], fallback_idx=0)
+                    db_sheet = find_best_sheet(sheets, ["result", "DB", "Sales", "Database", "Raw", "Retailer", "FnV", "Sheet1"], fallback_idx=1)
+                    df_bu = pd.read_excel(excel_file, sheet_name=bu_sheet)
+                    df_db = pd.read_excel(excel_file, sheet_name=db_sheet)
+                else:
+                    raw = pd.read_excel(file_path, sheet_name=sheets[0], header=None)
+                    header_row = _find_table_header(raw)
+                    df_bu = pd.read_excel(file_path, sheet_name=sheets[0], header=header_row)
+                    df_db = df_bu.copy()
+                    account_number = _find_account_number(raw)
+                    if account_number:
+                        df_bu.attrs["account_number"] = account_number
+                        df_db.attrs["account_number"] = account_number
+                return df_bu, df_db
+            finally:
+                excel_file.close()
         except Exception:
             continue
 

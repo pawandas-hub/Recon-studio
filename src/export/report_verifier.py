@@ -85,49 +85,52 @@ def verify_workbook(
     except Exception as exc:
         result.errors.append(f"Could not open report: {exc}")
         return result
-    detailed_sheet_name = (
-        "Recon Detailed Results" if "Recon Detailed Results" in workbook.sheetnames
-        else "Detailed Results"
-    )
-    missing_sheets = {"Executive Summary"} - set(workbook.sheetnames)
-    if detailed_sheet_name not in workbook.sheetnames:
-        missing_sheets.add("Recon Detailed Results")
-    if missing_sheets:
-        result.errors.append(f"Missing required sheets: {sorted(missing_sheets)}")
-        return result
     try:
-        details = pd.read_excel(report_path, sheet_name=detailed_sheet_name)
-        summary = pd.read_excel(report_path, sheet_name="Executive Summary", nrows=1)
-    except Exception as exc:
-        result.errors.append(f"Could not read report tables: {exc}")
-        return result
-    _check_result_invariants(details, detailed_sheet_name, result)
-    if "Recon_Type" in details.columns:
-        for recon_type, frame in details.groupby("Recon_Type", dropna=False):
-            sheet_name = str(recon_type)[:31]
-            if sheet_name not in workbook.sheetnames:
-                result.errors.append(f"Missing per-type sheet: {sheet_name}")
-            elif not _normalise_frame(pd.read_excel(report_path, sheet_name=sheet_name)).equals(
-                _normalise_frame(frame.reset_index(drop=True))
-            ):
-                result.errors.append(f"Per-type sheet differs from {detailed_sheet_name}: {sheet_name}")
-    if len(summary) != 1:
-        result.errors.append(f"Executive Summary must contain exactly one data row, found {len(summary)}")
-    elif not details.empty:
-        for column, expected in _expected_kpis(details).items():
-            actual = summary.iloc[0].get(column)
-            if _normalise_value(actual) != _normalise_value(expected):
-                result.errors.append(f"Executive Summary {column} is {actual!r}, expected {expected!r}")
-    if input_files:
+        detailed_sheet_name = (
+            "Recon Detailed Results" if "Recon Detailed Results" in workbook.sheetnames
+            else "Detailed Results"
+        )
+        missing_sheets = {"Executive Summary"} - set(workbook.sheetnames)
+        if detailed_sheet_name not in workbook.sheetnames:
+            missing_sheets.add("Recon Detailed Results")
+        if missing_sheets:
+            result.errors.append(f"Missing required sheets: {sorted(missing_sheets)}")
+            return result
         try:
-            fresh = process_file_list(list(input_files), mode=mode, recon_model=recon_model)
+            details = pd.read_excel(report_path, sheet_name=detailed_sheet_name)
+            summary = pd.read_excel(report_path, sheet_name="Executive Summary", nrows=1)
         except Exception as exc:
-            result.errors.append(f"Fresh reconciliation failed: {exc}")
+            result.errors.append(f"Could not read report tables: {exc}")
+            return result
+        _check_result_invariants(details, detailed_sheet_name, result)
+        if "Recon_Type" in details.columns:
+            for recon_type, frame in details.groupby("Recon_Type", dropna=False):
+                sheet_name = str(recon_type)[:31]
+                if sheet_name not in workbook.sheetnames:
+                    result.errors.append(f"Missing per-type sheet: {sheet_name}")
+                elif not _normalise_frame(pd.read_excel(report_path, sheet_name=sheet_name)).equals(
+                    _normalise_frame(frame.reset_index(drop=True))
+                ):
+                    result.errors.append(f"Per-type sheet differs from {detailed_sheet_name}: {sheet_name}")
+        if len(summary) != 1:
+            result.errors.append(f"Executive Summary must contain exactly one data row, found {len(summary)}")
+        elif not details.empty:
+            for column, expected in _expected_kpis(details).items():
+                actual = summary.iloc[0].get(column)
+                if _normalise_value(actual) != _normalise_value(expected):
+                    result.errors.append(f"Executive Summary {column} is {actual!r}, expected {expected!r}")
+        if input_files:
+            try:
+                fresh = process_file_list(list(input_files), mode=mode, recon_model=recon_model)
+            except Exception as exc:
+                result.errors.append(f"Fresh reconciliation failed: {exc}")
+            else:
+                if list(details.columns) != list(fresh.columns):
+                    result.errors.append(f"{detailed_sheet_name} columns differ from fresh reconciliation output")
+                elif not _normalise_frame(details).equals(_normalise_frame(fresh)):
+                    result.errors.append(f"{detailed_sheet_name} data differs from fresh reconciliation output")
         else:
-            if list(details.columns) != list(fresh.columns):
-                result.errors.append(f"{detailed_sheet_name} columns differ from fresh reconciliation output")
-            elif not _normalise_frame(details).equals(_normalise_frame(fresh)):
-                result.errors.append(f"{detailed_sheet_name} data differs from fresh reconciliation output")
-    else:
-        result.warnings.append("No input files supplied; freshness was not verified")
-    return result
+            result.warnings.append("No input files supplied; freshness was not verified")
+        return result
+    finally:
+        workbook.close()

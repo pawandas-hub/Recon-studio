@@ -54,8 +54,10 @@ def clean_signed_number(val) -> float:
 
 def parse_date_series(series: pd.Series, dayfirst: bool = True, missing_label: str = 'Missing Date') -> pd.Series:
     """Parses date series into standard YYYY-MM-DD string format safely without swapping ISO dates."""
-    if series is None or len(series) == 0:
-        return pd.Series(missing_label, index=series.index if series is not None else None)
+    if series is None:
+        return pd.Series([], dtype=object)
+    if len(series) == 0:
+        return pd.Series(missing_label, index=series.index)
     
     if pd.api.types.is_datetime64_any_dtype(series):
         return series.dt.strftime('%Y-%m-%d').fillna(missing_label)

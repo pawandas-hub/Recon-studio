@@ -127,8 +127,10 @@ class ReconHistoryManager:
 
     def _save(self) -> None:
         try:
-            with open(self.filepath, "w", encoding="utf-8") as f:
+            tmp_path = self.filepath + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(self.data, f, indent=2, ensure_ascii=False)
+            os.replace(tmp_path, self.filepath)
         except Exception:
             pass
 

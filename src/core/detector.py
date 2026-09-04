@@ -11,7 +11,7 @@ def find_best_sheet(sheet_names: List[str], keywords: List[str], fallback_idx: i
                 return sheet
     if len(sheet_names) > fallback_idx:
         return sheet_names[fallback_idx]
-    return sheet_names[0]
+    return sheet_names[0] if sheet_names else ""
 
 def find_best_col(df: pd.DataFrame, candidate_list: List[str]) -> Optional[str]:
     """Finds the best matching column name in a DataFrame using fuzzy and keyword heuristics."""
