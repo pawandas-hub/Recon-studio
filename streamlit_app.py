@@ -109,9 +109,9 @@ st.markdown("""
         color: #0f172a !important;
     }
 
-    /* Main Container Padding */
+    /* Main Container Padding — Generous top spacing so header is never clipped */
     .block-container {
-        padding-top: 1.2rem !important;
+        padding-top: 4.5rem !important;
         padding-bottom: 2rem !important;
         max-width: 98% !important;
     }
@@ -124,7 +124,7 @@ st.markdown("""
         background: #ffffff;
         border: 1px solid #e2e8f0;
         border-radius: 8px;
-        padding: 10px 18px;
+        padding: 12px 20px;
         margin-bottom: 18px;
         box-shadow: 0 1px 2px rgba(0,0,0,0.03);
     }
