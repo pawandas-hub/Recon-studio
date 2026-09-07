@@ -36,6 +36,7 @@ class CustomerMappingService:
         tmp = tmp[tmp[sap_col].astype(str).str.strip() != ""]
         tmp["_cid"] = tmp[cust_col].apply(clean_card)
         tmp["_sap"] = tmp[sap_col].apply(clean_card)
+        tmp = tmp[tmp["_cid"] != ""][tmp["_sap"] != ""]
         # Fix: use & instead of chained [] to avoid pandas IndexingError
         tmp = tmp[(tmp["_cid"] != "") & (tmp["_sap"] != "")]
         map_dict = dict(zip(tmp["_cid"], tmp["_sap"]))

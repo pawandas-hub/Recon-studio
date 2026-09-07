@@ -274,6 +274,9 @@ def _fmt_inr(n) -> str:
             return "—"
         sign = "-" if v < 0 else ""
         v = abs(v)
+        integer_part = int(v)
+        decimal_part = f"{v - integer_part:.2f}"[1:]
+        s = str(integer_part)
         # Round first to avoid truncation issues (e.g. 99.999 → 100.00, not 99.00)
         s_full = f"{v:.2f}"
         int_str, dec_str = s_full.split('.')
@@ -332,6 +335,7 @@ def show_kpi_modal(modal_type: str):
         subtitle = "Complete dataset from the current reconciliation"
         badge_bg = T_PRIMARY
     elif modal_type == "Matched":
+        filtered_df = results_df[results_df["Overall_Status"] == "Matched"]
         if "Overall_Status" in results_df.columns:
             filtered_df = results_df[results_df["Overall_Status"] == "Matched"]
         else:
@@ -340,6 +344,7 @@ def show_kpi_modal(modal_type: str):
         subtitle = "Records where SAP and Book/Bank values matched within ±₹1"
         badge_bg = T_GREEN
     else:
+        filtered_df = results_df[results_df["Overall_Status"] != "Matched"]
         if "Overall_Status" in results_df.columns:
             filtered_df = results_df[results_df["Overall_Status"] != "Matched"]
         else:
@@ -763,6 +768,7 @@ if st.session_state.active_view == "Reconciliation":
                     return f"color: {T_AMBER}; font-weight: 700;"
                 return ""
 
+            styled_t = df_final.style.map(style_status, subset=["Status"])
             # Bug 13: Styler.map added in pandas 2.1 — fallback to applymap for older versions
             styler = df_final.style
             styled_t = (
@@ -789,6 +795,13 @@ if st.session_state.active_view == "Reconciliation":
                         os.unlink(tmp_path)
                     except OSError:
                         pass
+                st.download_button(
+                    "📊  Export Excel Report",
+                    data=xl_bytes,
+                    file_name="Reconciliation_Summary_Report.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    type="primary",
+                )
                 if xl_bytes:
                     st.download_button(
                         "📊  Export Excel Report",
