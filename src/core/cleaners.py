@@ -22,8 +22,9 @@ def clean_card(val) -> str:
     s_upper = s.upper()
     for prefix in ['OM', 'CU', 'DOM', 'BP', 'C']:
         if s_upper.startswith(prefix):
-            remainder = s[len(prefix):]
-            if remainder.isdigit() or len(prefix) in [2, 3]:
+            remainder = s[len(prefix):].lstrip('-_ ')
+            # Only strip prefix when the remainder is purely numeric
+            if remainder.isdigit():
                 s = remainder
                 break
     return s.strip()
@@ -35,18 +36,34 @@ def clean_number(val) -> float:
     if isinstance(val, (int, float)):
         return abs(float(val))
     s = str(val).replace(',', '').strip()
+    # Handle SAP trailing-minus and parenthesis before abs
+    if s.endswith('-'):
+        s = s[:-1]
+    elif s.startswith('(') and s.endswith(')'):
+        s = s[1:-1]
     try:
         return abs(float(s))
     except ValueError:
         return 0.0
 
 def clean_signed_number(val) -> float:
-    """Converts mixed number types to float while preserving the source sign."""
+    """Converts mixed number types to float while preserving the source sign.
+
+    Supports standard formats and SAP accounting formats:
+      - Trailing minus:    "50000.00-"   → -50000.0
+      - Parentheses (CR):  "(1,234.50)"  → -1234.5
+    """
     if pd.isna(val):
         return 0.0
     if isinstance(val, (int, float)):
         return float(val)
     s = str(val).replace(',', '').strip()
+    # SAP trailing-minus format: "50000.00-"
+    if s.endswith('-'):
+        s = '-' + s[:-1]
+    # Accounting parentheses format: "(50000.00)"
+    elif s.startswith('(') and s.endswith(')'):
+        s = '-' + s[1:-1]
     try:
         return float(s)
     except ValueError:

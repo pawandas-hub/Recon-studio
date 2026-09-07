@@ -133,9 +133,9 @@ def _read_uncached(file_path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
                         df_bu = pd.read_excel(excel_file, sheet_name=bu_sheet)
                         df_db = pd.read_excel(excel_file, sheet_name=db_sheet)
                     else:
-                        raw = pd.read_excel(file_path, sheet_name=sheets[0], header=None)
+                        raw = pd.read_excel(excel_file, sheet_name=sheets[0], header=None)
                         header_row = _find_table_header(raw)
-                        df_bu = pd.read_excel(file_path, sheet_name=sheets[0], header=header_row)
+                        df_bu = pd.read_excel(excel_file, sheet_name=sheets[0], header=header_row)
                         df_db = df_bu.copy()
                         account_number = _find_account_number(raw)
                         if account_number:
@@ -153,7 +153,7 @@ def _read_uncached(file_path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
             tables = pd.read_html(file_path)
             if tables:
                 df_bu = tables[0]
-                df_db = tables[1] if len(tables) > 1 else tables[0]
+                df_db = tables[1] if len(tables) > 1 else tables[0].copy()
                 return df_bu, df_db
         except Exception:
             pass
@@ -181,9 +181,9 @@ def _read_uncached(file_path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
                     df_bu = pd.read_excel(excel_file, sheet_name=bu_sheet)
                     df_db = pd.read_excel(excel_file, sheet_name=db_sheet)
                 else:
-                    raw = pd.read_excel(file_path, sheet_name=sheets[0], header=None)
+                    raw = pd.read_excel(excel_file, sheet_name=sheets[0], header=None)
                     header_row = _find_table_header(raw)
-                    df_bu = pd.read_excel(file_path, sheet_name=sheets[0], header=header_row)
+                    df_bu = pd.read_excel(excel_file, sheet_name=sheets[0], header=header_row)
                     df_db = df_bu.copy()
                     account_number = _find_account_number(raw)
                     if account_number:

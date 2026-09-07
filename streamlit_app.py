@@ -274,9 +274,11 @@ def _fmt_inr(n) -> str:
             return "—"
         sign = "-" if v < 0 else ""
         v = abs(v)
-        integer_part = int(v)
-        decimal_part = f"{v - integer_part:.2f}"[1:]
-        s = str(integer_part)
+        # Round first to avoid truncation issues (e.g. 99.999 → 100.00, not 99.00)
+        s_full = f"{v:.2f}"
+        int_str, dec_str = s_full.split('.')
+        decimal_part = f".{dec_str}"
+        s = int_str
         if len(s) > 3:
             last3 = s[-3:]
             rest = s[:-3]
@@ -330,12 +332,18 @@ def show_kpi_modal(modal_type: str):
         subtitle = "Complete dataset from the current reconciliation"
         badge_bg = T_PRIMARY
     elif modal_type == "Matched":
-        filtered_df = results_df[results_df["Overall_Status"] == "Matched"]
+        if "Overall_Status" in results_df.columns:
+            filtered_df = results_df[results_df["Overall_Status"] == "Matched"]
+        else:
+            filtered_df = pd.DataFrame(columns=results_df.columns)
         title = "Matched Records"
         subtitle = "Records where SAP and Book/Bank values matched within ±₹1"
         badge_bg = T_GREEN
     else:
-        filtered_df = results_df[results_df["Overall_Status"] != "Matched"]
+        if "Overall_Status" in results_df.columns:
+            filtered_df = results_df[results_df["Overall_Status"] != "Matched"]
+        else:
+            filtered_df = results_df.copy()
         title = "Exception & Mismatch Records"
         subtitle = "Records requiring review, missing entries, or amount variances"
         badge_bg = T_RED
@@ -623,12 +631,19 @@ if st.session_state.active_view == "Reconciliation":
                 t_start = time.monotonic()
                 temp_dir = tempfile.mkdtemp(prefix="recon_")
                 paths = []
-                for i, uf in enumerate(uploaded_files):
-                    safe_name = os.path.basename(uf.name) or f"file_{i}"
-                    p = os.path.join(temp_dir, f"{i}_{safe_name}")
-                    with open(p, "wb") as f:
+                for uf in uploaded_files:
+                    safe_name = os.path.basename(uf.name) or "upload.bin"
+                    dest = os.path.join(temp_dir, safe_name)
+                    # Avoid overwriting if two files share the same basename
+                    if os.path.exists(dest):
+                        base, ext = os.path.splitext(safe_name)
+                        i = 1
+                        while os.path.exists(dest):
+                            dest = os.path.join(temp_dir, f"{base}_{i}{ext}")
+                            i += 1
+                    with open(dest, "wb") as f:
                         f.write(uf.getbuffer())
-                    paths.append(p)
+                    paths.append(dest)
 
                 mapping = {
                     "Sales": "Sales Reconciliation",
@@ -748,7 +763,13 @@ if st.session_state.active_view == "Reconciliation":
                     return f"color: {T_AMBER}; font-weight: 700;"
                 return ""
 
-            styled_t = df_final.style.map(style_status, subset=["Status"])
+            # Bug 13: Styler.map added in pandas 2.1 — fallback to applymap for older versions
+            styler = df_final.style
+            styled_t = (
+                styler.map(style_status, subset=["Status"])
+                if hasattr(styler, "map")
+                else styler.applymap(style_status, subset=["Status"])
+            )
             st.dataframe(styled_t, use_container_width=True, height=440)
 
             # Download Buttons
@@ -758,6 +779,7 @@ if st.session_state.active_view == "Reconciliation":
                 tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
                 tmp_path = tmp.name
                 tmp.close()
+                xl_bytes = b""  # Bug 14: default to prevent UnboundLocalError if export fails
                 try:
                     exporter.export(tmp_path, results_df)
                     with open(tmp_path, "rb") as f:
@@ -767,13 +789,16 @@ if st.session_state.active_view == "Reconciliation":
                         os.unlink(tmp_path)
                     except OSError:
                         pass
-                st.download_button(
-                    "📊  Export Excel Report",
-                    data=xl_bytes,
-                    file_name="Reconciliation_Summary_Report.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    type="primary",
-                )
+                if xl_bytes:
+                    st.download_button(
+                        "📊  Export Excel Report",
+                        data=xl_bytes,
+                        file_name="Reconciliation_Summary_Report.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        type="primary",
+                    )
+                else:
+                    st.warning("⚠️ Excel export failed. Try again.")
             with d_c2:
                 st.download_button(
                     "📄  Export CSV",

@@ -69,7 +69,7 @@ class ReconciliationEngine:
         # BU (SAP) aggregation
         df_bu['Ref_Clean'] = df_bu[bu_ref].apply(clean_id)
         df_bu_valid = df_bu[df_bu['Ref_Clean'] != ''].copy()
-        df_bu_valid['PostingDate_Std'] = parse_date_series(df_bu_valid[bu_date], dayfirst=True) if bu_date else 'Missing Date'
+        df_bu_valid['PostingDate_Std'] = parse_date_series(df_bu_valid[bu_date], dayfirst=True, missing_label='Missing in SAP') if bu_date else 'Missing in SAP'
         df_bu_valid['Offset_Clean'] = df_bu_valid[bu_acc].apply(clean_card) if bu_acc else ''
         df_bu_valid['BU_Clean'] = df_bu_valid[bu_unit].astype(str) if bu_unit else 'Default_BU'
         # Net debit/credit lines before taking the absolute ledger total.
@@ -95,6 +95,8 @@ class ReconciliationEngine:
         # In a reversal group, the first offset account can belong to the
         # reversed entry. Keep the final account on the net transaction side.
         def effective_offset(group: pd.DataFrame) -> str:
+            if group.empty:
+                return ''
             net_amount = group['Amt_Clean'].sum()
             if net_amount and (group['Amt_Clean'] < 0).any() and (group['Amt_Clean'] > 0).any():
                 matching = group[group['Amt_Clean'].apply(np.sign) == np.sign(net_amount)]
@@ -109,7 +111,7 @@ class ReconciliationEngine:
         # DB (Sales) aggregation
         df_db['Ref_Clean'] = df_db[db_ref].apply(clean_id)
         df_db_valid = df_db[df_db['Ref_Clean'] != ''].copy()
-        df_db_valid['DocDate_Std'] = parse_date_series(df_db_valid[db_date], dayfirst=True) if db_date else 'Missing Date'
+        df_db_valid['DocDate_Std'] = parse_date_series(df_db_valid[db_date], dayfirst=True, missing_label='Missing in Sales/DB') if db_date else 'Missing in Sales/DB'
         df_db_valid['CardCode_Clean'] = df_db_valid[db_card].apply(clean_card) if db_card else ''
         df_db_valid['DB_BU_Clean'] = df_db_valid[db_unit].astype(str) if db_unit else ''
         df_db_valid['Taxable_Clean'] = df_db_valid[db_taxable].apply(clean_number) if db_taxable else 0.0

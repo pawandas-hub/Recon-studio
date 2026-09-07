@@ -19,7 +19,7 @@ class CustomerMappingService:
 
     def get_mapped_sap_code(self, customer_id: str) -> str:
         """Looks up the mapped SAP code for a given customer ID, fallback to original ID if not found."""
-        if not customer_id or customer_id == 'Missing in Sales/DB':
+        if pd.isna(customer_id) or not str(customer_id).strip() or str(customer_id).strip() == 'Missing in Sales/DB':
             return 'Missing in Sales/DB'
         clean_cid = clean_card(customer_id)
         return self._map.get(clean_cid, clean_cid)
@@ -36,7 +36,8 @@ class CustomerMappingService:
         tmp = tmp[tmp[sap_col].astype(str).str.strip() != ""]
         tmp["_cid"] = tmp[cust_col].apply(clean_card)
         tmp["_sap"] = tmp[sap_col].apply(clean_card)
-        tmp = tmp[tmp["_cid"] != ""][tmp["_sap"] != ""]
+        # Fix: use & instead of chained [] to avoid pandas IndexingError
+        tmp = tmp[(tmp["_cid"] != "") & (tmp["_sap"] != "")]
         map_dict = dict(zip(tmp["_cid"], tmp["_sap"]))
         return cls(map_dict)
 

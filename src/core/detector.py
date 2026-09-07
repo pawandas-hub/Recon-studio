@@ -7,7 +7,8 @@ def find_best_sheet(sheet_names: List[str], keywords: List[str], fallback_idx: i
     """Finds the sheet name that best matches a list of keywords."""
     for sheet in sheet_names:
         for kw in keywords:
-            if kw.lower() in sheet.lower():
+            # Cast to str to safely handle integer sheet names (e.g. 2024)
+            if kw.lower() in str(sheet).lower():
                 return sheet
     if len(sheet_names) > fallback_idx:
         return sheet_names[fallback_idx]
@@ -31,6 +32,9 @@ def find_best_col(df: pd.DataFrame, candidate_list: List[str]) -> Optional[str]:
     for cand in candidate_list:
         cand_clean = re.sub(r'[\s_\-\(\)\/]+', '', cand.lower())
         for key, orig_col in clean_cols_map.items():
+            # Skip blank/empty column names — "" matches every candidate substring
+            if not key:
+                continue
             if any(ex in key for ex in excluded_col_kw) and 'waived' not in cand_clean:
                 continue
             if any(ex in key for ex in excluded_cand_kw) and 'amt' not in cand_clean and 'cd' not in cand_clean:
