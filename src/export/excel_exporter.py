@@ -198,6 +198,7 @@ class ExcelReportExporter:
             )
             var_total = results_df['Amount_Variance'].sum() if 'Amount_Variance' in results_df else 0.0
             total_count = len(results_df)
+            matched_count = int((results_df['Overall_Status'] == 'Matched').sum())
             matched_count = int((results_df['Overall_Status'] == 'Matched').sum()) if 'Overall_Status' in results_df.columns else 0
             kpi_summary = pd.DataFrame([{
                 'Total Records Reconciled': total_count,

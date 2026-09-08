@@ -4,7 +4,7 @@ Features:
 - Multi-view navigation: Dashboard (Last 30 runs history), Reconciliation, Data Sources (Last 10 files), Reports.
 - 3-Mode Theme System: System Default (Auto-detects Windows Dark/Light mode), Light, Dark.
 - 100% Complete Dark Mode with clam engine (zero white boxes).
-- Dynamic transparent Ninjacart logo (adapts to Light & Dark themes).
+- Dynamic theme switching (Light & Dark themes).
 - Live 12-hour IST Clock (Kolkata/Mumbai/Chennai).
 - Tolerance updated to ±₹1.
 - Interactive KPI popup templates on Total Records, Matched, and Exceptions cards.
@@ -19,10 +19,12 @@ import io
 import json
 import math
 import os
+import subprocess
 import sys
 import threading
 import time
 import tkinter as tk
+import webbrowser
 from dataclasses import asdict, dataclass
 from tkinter import filedialog, messagebox, ttk
 from typing import Callable, Dict, List, Optional, Tuple
@@ -561,10 +563,12 @@ class ReconApp(tk.Tk):
         self._prog_phases: list = []
         self._prog_paused = False
         self._prog_cancelled = False
+        self._is_syncing = False
 
         self._build_app()
         self._start_clock()
         self._start_system_theme_listener()
+        self.after(500, self._check_sync_status_async)
 
     # ─────────────────────────────────────────────────────────────────
     # Core Layout
@@ -690,6 +694,49 @@ class ReconApp(tk.Tk):
                 widget.bind("<Enter>", lambda e, f=f, lbl=lbl, vk=view_key: self._on_nav_hover(f, lbl, vk, True))
                 widget.bind("<Leave>", lambda e, f=f, lbl=lbl, vk=view_key: self._on_nav_hover(f, lbl, vk, False))
 
+        # Divider & Online Recon Sync Button under Reports
+        self._sync_sep = tk.Frame(sb, bg=t.border, height=1)
+        self._sync_sep.pack(fill=tk.X, padx=12, pady=(18, 12))
+
+        self._sync_frame = tk.Frame(sb, bg=t.card)
+        self._sync_frame.pack(fill=tk.X, padx=10)
+
+        self._sync_header_lbl = tk.Label(
+            self._sync_frame,
+            text="ONLINE RECON LINK",
+            font=("Segoe UI", 8, "bold"),
+            bg=t.card, fg=t.muted,
+            anchor="w", padx=4,
+        )
+        self._sync_header_lbl.pack(fill=tk.X, pady=(0, 6))
+
+        self._sync_btn = tk.Label(
+            self._sync_frame,
+            text="🚀  Update Online Recon",
+            font=("Segoe UI", 9, "bold"),
+            bg=t.primary,
+            fg="#ffffff",
+            cursor="hand2",
+            padx=10,
+            pady=9,
+            relief="flat",
+        )
+        self._sync_btn.pack(fill=tk.X, pady=2)
+        self._sync_btn.bind("<Button-1>", lambda _e: self._trigger_streamlit_sync())
+        self._sync_btn.bind("<Enter>", lambda _e: self._on_sync_btn_hover(True))
+        self._sync_btn.bind("<Leave>", lambda _e: self._on_sync_btn_hover(False))
+
+        self._sync_status_lbl = tk.Label(
+            self._sync_frame,
+            text="● Checking status…",
+            font=("Segoe UI", 8),
+            bg=t.card,
+            fg=t.muted,
+            anchor="w",
+            padx=4,
+        )
+        self._sync_status_lbl.pack(fill=tk.X, pady=(4, 0))
+
         self._sidebar_footer = tk.Label(
             sb, text="v3.0 · Connected to SAP ✔",
             font=("Segoe UI", 9), bg=t.card, fg=t.muted,
@@ -737,7 +784,7 @@ class ReconApp(tk.Tk):
         self._topbar_title.config(text=f"Recon Studio  ›  {view_name}")
 
     # ─────────────────────────────────────────────────────────────────
-    # TOPBAR (With 3-Way Theme Segment + Ninjacart Logo)
+    # TOPBAR (With 3-Way Theme Segment)
     # ─────────────────────────────────────────────────────────────────
     def _build_topbar(self):
         t = self._theme
@@ -760,12 +807,6 @@ class ReconApp(tk.Tk):
         right.pack(side=tk.RIGHT, padx=20)
         self._topbar_right = right
 
-        # Ninjacart Logo in right-side upper corner (Dynamic Light/Dark)
-        self._logo_img = None
-        self._avatar = tk.Label(right, bg=t.card, padx=4, pady=2)
-        self._avatar.pack(side=tk.RIGHT, padx=(12, 0))
-        self._update_ninjacart_logo()
-
         # Quick Export button
         self._btn_export = self._ghost_button(right, "⬇  Export Excel", command=self._do_export)
         self._btn_export.pack(side=tk.RIGHT, padx=(0, 12))
@@ -785,26 +826,6 @@ class ReconApp(tk.Tk):
 
         self._refresh_theme_seg_ui()
 
-    def _update_ninjacart_logo(self):
-        """Loads transparent Ninjacart logo tailored for current Light or Dark theme."""
-        t = self._theme
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        logo_filename = "ninjacart_dark.png" if self._dark else "ninjacart_light.png"
-        logo_path = os.path.join(base_dir, "assets", logo_filename)
-
-        if not os.path.exists(logo_path):
-            logo_path = os.path.join(base_dir, "assets", "ninjacart_logo_32.png")
-
-        if os.path.exists(logo_path):
-            try:
-                self._logo_img = tk.PhotoImage(file=logo_path)
-                self._avatar.config(image=self._logo_img, text="", bg=t.card)
-            except Exception:
-                self._avatar.config(image="", text="ninjacart", font=("Segoe UI", 10, "bold"),
-                                    bg=t.card, fg=t.text)
-        else:
-            self._avatar.config(image="", text="ninjacart", font=("Segoe UI", 10, "bold"),
-                                bg=t.card, fg=t.text)
 
     def _update_recon_studio_logo(self):
         """Loads transparent Recon Studio logo tailored for current Light or Dark theme."""
@@ -872,13 +893,23 @@ class ReconApp(tk.Tk):
         self._update_recon_studio_logo()
         self._nav_frame.config(bg=t.card)
 
+        if hasattr(self, "_sync_sep") and self._sync_sep.winfo_exists():
+            self._sync_sep.config(bg=t.border)
+        if hasattr(self, "_sync_frame") and self._sync_frame.winfo_exists():
+            self._sync_frame.config(bg=t.card)
+        if hasattr(self, "_sync_header_lbl") and self._sync_header_lbl.winfo_exists():
+            self._sync_header_lbl.config(bg=t.card, fg=t.muted)
+        if hasattr(self, "_sync_btn") and self._sync_btn.winfo_exists():
+            self._sync_btn.config(bg=t.primary)
+        if hasattr(self, "_sync_status_lbl") and self._sync_status_lbl.winfo_exists():
+            self._sync_status_lbl.config(bg=t.card)
+
         self._topbar.config(bg=t.card)
         self._topbar_sep.config(bg=t.border)
         self._topbar_title.config(bg=t.card, fg=t.text)
         if hasattr(self, "_topbar_right") and self._topbar_right.winfo_exists():
             self._topbar_right.config(bg=t.card)
             self._btn_export.config(bg=t.card, fg=t.text, highlightbackground=t.border)
-        self._update_ninjacart_logo()
         self._refresh_theme_seg_ui()
 
         self._apply_treeview_style()
@@ -1467,6 +1498,13 @@ class ReconApp(tk.Tk):
                                   bg=t.primary, fg="#ffffff", padx=14, pady=6, cursor="hand2")
         export_csv_btn.pack(side=tk.RIGHT, padx=(0, 8))
         export_csv_btn.bind("<Button-1>", lambda _e: self._do_export_csv())
+
+        self._rep_sync_btn = tk.Label(top_row, text="🚀 Update Online Recon", font=("Segoe UI", 9, "bold"),
+                                      bg=t.primary, fg="#ffffff", padx=14, pady=6, cursor="hand2")
+        self._rep_sync_btn.pack(side=tk.RIGHT, padx=(0, 8))
+        self._rep_sync_btn.bind("<Button-1>", lambda _e: self._trigger_streamlit_sync())
+        self._rep_sync_btn.bind("<Enter>", lambda _e: self._rep_sync_btn.config(bg=t.primary_hover))
+        self._rep_sync_btn.bind("<Leave>", lambda _e: self._rep_sync_btn.config(bg=t.primary))
 
         self._rep_subtitle = tk.Label(head, text="Executive breakdown and itemized reconciliation ledger",
                                       font=("Segoe UI", 9), bg=t.bg, fg=t.muted)
@@ -2223,6 +2261,177 @@ class ReconApp(tk.Tk):
         b.bind("<Enter>", lambda e: b.config(bg=self._theme.slate_soft))
         b.bind("<Leave>", lambda e: b.config(bg=self._theme.card))
         return b
+
+    # ─────────────────────────────────────────────────────────────────
+    # Streamlit Online Recon Sync & Deployment Engine
+    # ─────────────────────────────────────────────────────────────────
+    def _on_sync_btn_hover(self, enter: bool) -> None:
+        if getattr(self, "_is_syncing", False):
+            return
+        t = self._theme
+        if hasattr(self, "_sync_btn") and self._sync_btn.winfo_exists():
+            self._sync_btn.config(bg=t.primary_hover if enter else t.primary)
+
+    def _trigger_streamlit_sync(self) -> None:
+        """Prompts confirmation and pushes updates to GitHub, triggering Streamlit Cloud deployment."""
+        if getattr(self, "_is_syncing", False):
+            messagebox.showinfo("Sync In Progress", "An update to Streamlit Online is currently in progress. Please wait.")
+            return
+
+        confirm = messagebox.askyesno(
+            "Update Streamlit Online Recon",
+            "Do you want to update the online Streamlit recon link with all current changes & implementations?\n\n"
+            "This will stage, commit, and push your latest updates to GitHub (pawandas-hub/Recon-studio), triggering Streamlit Cloud to update.\n\n"
+            "Proceed?",
+        )
+        if not confirm:
+            return
+
+        self._is_syncing = True
+        t = self._theme
+        if hasattr(self, "_sync_btn") and self._sync_btn.winfo_exists():
+            self._sync_btn.config(text="⏳  Syncing…", bg=t.muted)
+        if hasattr(self, "_sync_status_lbl") and self._sync_status_lbl.winfo_exists():
+            self._sync_status_lbl.config(text="Deploying to Streamlit Cloud…", fg=t.amber)
+        if hasattr(self, "_rep_sync_btn") and self._rep_sync_btn.winfo_exists():
+            self._rep_sync_btn.config(text="⏳ Syncing…", bg=t.muted)
+
+        threading.Thread(target=self._sync_streamlit_worker, daemon=True).start()
+
+    def _sync_streamlit_worker(self) -> None:
+        """Worker thread to execute git add, commit, and push safely in the background."""
+        root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        creation_flags = 0x08000000 if sys.platform == "win32" else 0
+
+        try:
+            # 1. Check working directory status
+            status_res = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=root_dir, capture_output=True, text=True, timeout=30,
+                creationflags=creation_flags,
+            )
+            uncommitted = status_res.stdout.strip()
+
+            # 2. Check unpushed commits
+            unpushed_res = subprocess.run(
+                ["git", "log", "origin/main..HEAD", "--oneline"],
+                cwd=root_dir, capture_output=True, text=True, timeout=30,
+                creationflags=creation_flags,
+            )
+            unpushed = unpushed_res.stdout.strip()
+
+            if not uncommitted and not unpushed:
+                self.after(0, self._on_sync_finished, True,
+                           "Streamlit Online is already up to date!\n\nThere are no new implementations or unpushed changes to deploy.",
+                           False)
+                return
+
+            # 3. Stage and commit uncommitted files
+            if uncommitted:
+                add_res = subprocess.run(
+                    ["git", "add", "-A"],
+                    cwd=root_dir, capture_output=True, text=True, timeout=30,
+                    creationflags=creation_flags,
+                )
+                if add_res.returncode != 0:
+                    err = add_res.stderr.strip() or add_res.stdout.strip()
+                    self.after(0, self._on_sync_finished, False, f"Failed to stage changes:\n{err}", False)
+                    return
+
+                now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                commit_msg = f"feat: sync and update online recon deployment ({now_str})"
+                commit_res = subprocess.run(
+                    ["git", "commit", "-m", commit_msg],
+                    cwd=root_dir, capture_output=True, text=True, timeout=30,
+                    creationflags=creation_flags,
+                )
+                if commit_res.returncode != 0:
+                    err = commit_res.stderr.strip() or commit_res.stdout.strip()
+                    self.after(0, self._on_sync_finished, False, f"Failed to commit changes:\n{err}", False)
+                    return
+
+            # 4. Push commits to GitHub origin main
+            push_res = subprocess.run(
+                ["git", "push", "origin", "main"],
+                cwd=root_dir, capture_output=True, text=True, timeout=90,
+                creationflags=creation_flags,
+            )
+            if push_res.returncode != 0:
+                err = push_res.stderr.strip() or push_res.stdout.strip()
+                self.after(0, self._on_sync_finished, False, f"Failed to push to GitHub:\n{err}", False)
+                return
+
+            self.after(0, self._on_sync_finished, True,
+                       "All changes and implementations have been successfully deployed!\n\n"
+                       "GitHub repository is up to date and Streamlit Cloud is now deploying the online recon link.",
+                       True)
+
+        except subprocess.TimeoutExpired:
+            self.after(0, self._on_sync_finished, False,
+                       "Operation timed out while connecting to GitHub.\nPlease check your internet connection.",
+                       False)
+        except Exception as e:
+            self.after(0, self._on_sync_finished, False, f"Unexpected sync error:\n{str(e)}", False)
+
+    def _on_sync_finished(self, success: bool, message: str, can_open: bool) -> None:
+        """UI updates on the main thread after sync completes."""
+        self._is_syncing = False
+        t = self._theme
+
+        if hasattr(self, "_sync_btn") and self._sync_btn.winfo_exists():
+            self._sync_btn.config(text="🚀  Update Online Recon", bg=t.primary)
+        if hasattr(self, "_rep_sync_btn") and self._rep_sync_btn.winfo_exists():
+            self._rep_sync_btn.config(text="🚀 Update Online Recon", bg=t.primary)
+
+        if success:
+            if hasattr(self, "_sync_status_lbl") and self._sync_status_lbl.winfo_exists():
+                self._sync_status_lbl.config(text="● Up to date with Cloud", fg=t.green)
+            if can_open:
+                ans = messagebox.askyesno(
+                    "Streamlit Online Recon Updated",
+                    f"{message}\n\nWould you like to open the GitHub / Streamlit deployment repository in your web browser?"
+                )
+                if ans:
+                    webbrowser.open("https://github.com/pawandas-hub/Recon-studio")
+            else:
+                messagebox.showinfo("Online Recon Status", message)
+        else:
+            if hasattr(self, "_sync_status_lbl") and self._sync_status_lbl.winfo_exists():
+                self._sync_status_lbl.config(text="● Sync failed (Click to retry)", fg=t.red)
+            messagebox.showerror("Update Online Recon Failed", message)
+
+    def _check_sync_status_async(self) -> None:
+        """Background probe to see if local changes are pending deployment."""
+        def _worker():
+            try:
+                root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                creation_flags = 0x08000000 if sys.platform == "win32" else 0
+                status_res = subprocess.run(
+                    ["git", "status", "--porcelain"],
+                    cwd=root_dir, capture_output=True, text=True, timeout=10,
+                    creationflags=creation_flags,
+                )
+                unpushed_res = subprocess.run(
+                    ["git", "log", "origin/main..HEAD", "--oneline"],
+                    cwd=root_dir, capture_output=True, text=True, timeout=10,
+                    creationflags=creation_flags,
+                )
+                has_pending = bool(status_res.stdout.strip() or unpushed_res.stdout.strip())
+                self.after(0, self._update_sync_status_badge, has_pending)
+            except Exception:
+                pass
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _update_sync_status_badge(self, has_pending_changes: bool) -> None:
+        if getattr(self, "_is_syncing", False):
+            return
+        t = self._theme
+        if hasattr(self, "_sync_status_lbl") and self._sync_status_lbl.winfo_exists():
+            if has_pending_changes:
+                self._sync_status_lbl.config(text="● Pending changes (Not online)", fg=t.amber)
+            else:
+                self._sync_status_lbl.config(text="● Up to date with Cloud", fg=t.green)
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────

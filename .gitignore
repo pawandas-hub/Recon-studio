@@ -1,4 +1,4 @@
-﻿# Byte-compiled / optimized / DLL files
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
@@ -14,3 +14,8 @@ env/
 # OS generated files
 Thumbs.db
 Desktop.ini
+
+# IDE and Editor files
+.vscode/
+.idea/
+

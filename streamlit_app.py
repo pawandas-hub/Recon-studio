@@ -2,7 +2,7 @@
 
 Features:
 1. Working 3-Mode Theme System: Auto, Light, Dark with dynamic CSS and logo switching.
-2. Top Right Corner: Ninjacart Logo (3 sizes bigger — 52px) with Theme Switcher underneath.
+2. Top Right Corner: Working Theme Switcher (Auto, Light, Dark).
 3. Interactive KPI Cards: Clicking Total Records, Matched, or Exceptions opens a detailed modal popup (@st.dialog) with in-modal search and export.
 4. Left Sidebar: Enlarged Recon Studio logo (68px), navigation buttons (Dashboard, Reconciliation, Data Sources, Reports), status footer.
 5. Reconciliation Workspace: Header with segmented controls (Sales, Collection, Both), Run button, SVG donut breakdown, input dropzone, itemized table.
@@ -80,10 +80,8 @@ def _load_b64_image(rel_path: str) -> str:
 is_dark = (st.session_state.theme_mode == "Dark")
 
 if is_dark:
-    NINJACART_LOGO_B64 = _load_b64_image("assets/ninjacart_dark.png") or _load_b64_image("assets/ninjacart_light.png")
     RECON_LOGO_B64 = _load_b64_image("assets/recon_logo_dark.png") or _load_b64_image("assets/recon_studio_cropped.png")
 else:
-    NINJACART_LOGO_B64 = _load_b64_image("assets/ninjacart_light.png")
     RECON_LOGO_B64 = _load_b64_image("assets/recon_studio_cropped.png") or _load_b64_image("assets/recon_logo_light.png")
 
 # ---------------------------------------------------------------------------
@@ -431,27 +429,18 @@ with st.sidebar:
     )
 
 # ---------------------------------------------------------------------------
-# Top Bar: Breadcrumbs (Left) & Ninjacart Logo (3 sizes bigger: 52px) + Working Theme Switcher Underneath (Right)
+# Top Bar: Breadcrumbs (Left) & Working Theme Switcher (Right)
 # ---------------------------------------------------------------------------
-ninja_logo_html = f'<img src="{NINJACART_LOGO_B64}" style="height:52px; max-width:100%; object-fit:contain;" />' if NINJACART_LOGO_B64 else f'<span style="font-size:1.8rem; font-weight:900; color:{T_TEXT};">ninjacart</span>'
-
 with st.container(border=True):
-    top_c1, top_c2 = st.columns([3, 1.8])
+    top_c1, top_c2 = st.columns([3.5, 1.5])
     with top_c1:
         st.markdown(
-            f'<div style="font-size: 1rem; font-weight: 700; color: {T_TEXT}; padding: 14px 0 0 0;">'
+            f'<div style="font-size: 1rem; font-weight: 700; color: {T_TEXT}; padding: 6px 0;">'
             f'Recon Studio &rsaquo; <span style="color: {T_MUTED}; font-weight: 500;">{st.session_state.active_view}</span>'
             f'</div>',
             unsafe_allow_html=True,
         )
     with top_c2:
-        # Ninjacart Logo on top (3 sizes bigger)
-        st.markdown(
-            f'<div style="display:flex; justify-content:flex-end; align-items:center; margin-bottom:6px;">'
-            f'{ninja_logo_html}'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
         # Working Theme Switcher buttons underneath the logo
         theme_options = ["💻 Auto", "☀️ Light", "🌙 Dark"]
         curr_theme_idx = 0 if st.session_state.theme_mode == "Auto" else (1 if st.session_state.theme_mode == "Light" else 2)
