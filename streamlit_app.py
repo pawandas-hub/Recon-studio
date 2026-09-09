@@ -717,7 +717,7 @@ if st.session_state.active_view == "Reconciliation":
             for _, row in df_view.iterrows():
                 rtype = row.get("Recon_Type", "Sales")
                 if rtype == "Sales":
-                    ref = _first_valid(row.get("RefId_Ref1"), row.get("Ref2_Invoice_No"), row.get("Reference"))
+                    ref = _first_valid(row.get("InvoiceId"), row.get("RefId_Ref1"), row.get("Ref2_Invoice_No"), row.get("Reference"))
                     bu = _first_valid(row.get("Business_Unit"))
                     posting = str(_first_valid(row.get("Posting_Date")))
                     sap_amt = _fmt_inr(row.get("Total_CD_LC", 0))

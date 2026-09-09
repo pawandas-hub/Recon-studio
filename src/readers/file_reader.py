@@ -18,6 +18,7 @@ def clear_cache() -> None:
     """Clear the session file cache. Call between reconciliation runs if needed."""
     _FILE_CACHE.clear()
 
+
 def read_file_tables(file_path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Reads a data file (.xlsx, .xls, .tsv, .csv, .html) and extracts primary and secondary tables.
@@ -82,7 +83,7 @@ def _read_uncached(file_path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
                                 continue
                         continue
                     if lower.endswith(('.xls', '.xlsx', '.xlsm')):
-                        for engine in [None, 'openpyxl', 'calamine', 'xlrd']:
+                        for engine in ['calamine', 'openpyxl', 'xlrd', None]:
                             try:
                                 try:
                                     excel_file = pd.ExcelFile(io.BytesIO(payload), engine=engine)
@@ -93,11 +94,11 @@ def _read_uncached(file_path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
                                         df_bu = pd.read_excel(excel_file, sheet_name=bu_sheet)
                                         df_db = pd.read_excel(excel_file, sheet_name=db_sheet)
                                     else:
-                                        raw = pd.read_excel(excel_file, sheet_name=sheets[0], header=None)
-                                        header_row = _find_table_header(raw)
+                                        sample = pd.read_excel(excel_file, sheet_name=sheets[0], header=None, nrows=40)
+                                        header_row = _find_table_header(sample)
                                         df_bu = pd.read_excel(excel_file, sheet_name=sheets[0], header=header_row)
                                         df_db = df_bu.copy()
-                                        account_number = _find_account_number(raw)
+                                        account_number = _find_account_number(sample)
                                         if account_number:
                                             df_bu.attrs["account_number"] = account_number
                                             df_db.attrs["account_number"] = account_number
@@ -122,7 +123,7 @@ def _read_uncached(file_path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
 
     # 3. Fast path: Standard OpenXML / Excel (.xlsx, .xlsm)
     if magic.startswith(b"PK\x03\x04") or file_path.lower().endswith((".xlsx", ".xlsm")):
-        for engine in [None, "openpyxl", "calamine"]:
+        for engine in ["calamine", "openpyxl", None]:
             try:
                 try:
                     excel_file = pd.ExcelFile(file_path, engine=engine)
@@ -133,13 +134,11 @@ def _read_uncached(file_path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
                         df_bu = pd.read_excel(excel_file, sheet_name=bu_sheet)
                         df_db = pd.read_excel(excel_file, sheet_name=db_sheet)
                     else:
-                        raw = pd.read_excel(file_path, sheet_name=sheets[0], header=None)
-                        raw = pd.read_excel(excel_file, sheet_name=sheets[0], header=None)
-                        header_row = _find_table_header(raw)
-                        df_bu = pd.read_excel(file_path, sheet_name=sheets[0], header=header_row)
+                        sample = pd.read_excel(excel_file, sheet_name=sheets[0], header=None, nrows=40)
+                        header_row = _find_table_header(sample)
                         df_bu = pd.read_excel(excel_file, sheet_name=sheets[0], header=header_row)
                         df_db = df_bu.copy()
-                        account_number = _find_account_number(raw)
+                        account_number = _find_account_number(sample)
                         if account_number:
                             df_bu.attrs["account_number"] = account_number
                             df_db.attrs["account_number"] = account_number
@@ -155,7 +154,6 @@ def _read_uncached(file_path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
             tables = pd.read_html(file_path)
             if tables:
                 df_bu = tables[0]
-                df_db = tables[1] if len(tables) > 1 else tables[0]
                 df_db = tables[1] if len(tables) > 1 else tables[0].copy()
                 return df_bu, df_db
         except Exception:
@@ -173,7 +171,7 @@ def _read_uncached(file_path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
                 pass
 
     # 6. General fallback Excel engines
-    for engine in [None, "openpyxl", "xlrd", "pyxlsb", "calamine"]:
+    for engine in ["calamine", "openpyxl", "xlrd", "pyxlsb", None]:
         try:
             try:
                 excel_file = pd.ExcelFile(file_path, engine=engine)
@@ -184,13 +182,11 @@ def _read_uncached(file_path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
                     df_bu = pd.read_excel(excel_file, sheet_name=bu_sheet)
                     df_db = pd.read_excel(excel_file, sheet_name=db_sheet)
                 else:
-                    raw = pd.read_excel(file_path, sheet_name=sheets[0], header=None)
-                    raw = pd.read_excel(excel_file, sheet_name=sheets[0], header=None)
-                    header_row = _find_table_header(raw)
-                    df_bu = pd.read_excel(file_path, sheet_name=sheets[0], header=header_row)
+                    sample = pd.read_excel(excel_file, sheet_name=sheets[0], header=None, nrows=40)
+                    header_row = _find_table_header(sample)
                     df_bu = pd.read_excel(excel_file, sheet_name=sheets[0], header=header_row)
                     df_db = df_bu.copy()
-                    account_number = _find_account_number(raw)
+                    account_number = _find_account_number(sample)
                     if account_number:
                         df_bu.attrs["account_number"] = account_number
                         df_db.attrs["account_number"] = account_number
@@ -208,12 +204,28 @@ def _read_uncached(file_path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
 
 
 def _find_table_header(raw: pd.DataFrame) -> int:
-    """Find a bank-table header in workbooks with report metadata above it."""
+    """Find a bank-table, SAP ledger, or sales table header in workbooks with metadata or empty rows above it."""
     for index, row in raw.head(40).iterrows():
-        values = {str(value).strip().lower() for value in row if not pd.isna(value)}
+        non_null = [v for v in row if not pd.isna(v)]
+        if not non_null:
+            continue
+        values = {str(value).strip().lower() for value in non_null}
+        # Bank-table headers
         if any('tran' in value and 'id' in value for value in values) and any('deposit' in value for value in values):
             return int(index)
         if any('description' in value for value in values) and any(value == 'deposit' or 'deposit' in value for value in values):
+            return int(index)
+        # SAP general ledger headers
+        if any('posting date' in value for value in values) and any(
+            any(k in v for k in ['offset acct', 'offset account', 'trans. no.', 'doc. no.', 'control account', 'deb./cred.'])
+            for v in values
+        ):
+            return int(index)
+        # Sales DB headers
+        if any('docdate' in value or 'invoice_date' in value for value in values) and any(
+            any(k in v for k in ['cardcode', 'customer', 'invoiceid', 'refid'])
+            for v in values
+        ):
             return int(index)
     return 0
 
@@ -232,4 +244,3 @@ def _find_account_number(raw: pd.DataFrame) -> str:
         if candidate.isdigit() and len(candidate) >= 8:
             return candidate
     return ''
-

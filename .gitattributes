@@ -1,0 +1,20 @@
+﻿# Set default behavior to automatically handle line endings
+* text=auto eol=lf
+
+# Windows scripts keep CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary file types
+*.xlsx binary
+*.xls binary
+*.xlsm binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.exe binary
+*.dll binary

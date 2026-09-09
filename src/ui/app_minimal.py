@@ -48,7 +48,8 @@ class MinimalReconApp:
             values=[
                 "Auto Detect",
                 "Format 1 (Legacy / Ref. 1 vs DB)",
-                "Format 2 (Retailer / Ref. 2 vs Invoice No)"
+                "Format 2 (Retailer / Ref. 2 vs Invoice No)",
+                "Format 3 (AFC / Sales with Freight & GRN)"
             ],
             state="readonly",
             width=38,

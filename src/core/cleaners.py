@@ -1,5 +1,6 @@
 """Data cleaning and normalization utilities for IDs, Card Codes, Numbers, and Dates."""
 import re
+from typing import Optional
 import pandas as pd
 
 def clean_id(val) -> str:
@@ -11,6 +12,18 @@ def clean_id(val) -> str:
         s = s[:-2]
     digits = re.findall(r'\d+', s)
     return digits[-1] if digits else s
+
+def clean_afc_id(val) -> str:
+    """Extracts clean invoice id by stripping 'AFC' prefix (e.g. 'AFC12345' -> '12345')."""
+    if pd.isna(val):
+        return ""
+    s = str(val).strip()
+    if s.endswith('.0'):
+        s = s[:-2]
+    s_cleaned = re.sub(r'^afc[-_\s]*', '', s, flags=re.IGNORECASE).strip()
+    digits = re.findall(r'\d+', s_cleaned)
+    return digits[-1] if digits else s_cleaned
+
 
 def clean_card(val) -> str:
     """Normalizes customer/card codes by stripping prefixes like OM, CU, DOM, BP, C."""
@@ -68,6 +81,22 @@ def clean_signed_number(val) -> float:
         return float(s)
     except ValueError:
         return 0.0
+
+def clean_number_series(s: Optional[pd.Series]) -> pd.Series:
+    """Vectorized helper: converts a Series to absolute float quickly."""
+    if s is None or s.empty:
+        return pd.Series(0.0)
+    if pd.api.types.is_numeric_dtype(s):
+        return s.fillna(0.0).abs().astype(float)
+    return s.apply(clean_number)
+
+def clean_signed_number_series(s: Optional[pd.Series]) -> pd.Series:
+    """Vectorized helper: converts a Series to signed float quickly."""
+    if s is None or s.empty:
+        return pd.Series(0.0)
+    if pd.api.types.is_numeric_dtype(s):
+        return s.fillna(0.0).astype(float)
+    return s.apply(clean_signed_number)
 
 def parse_date_series(series: pd.Series, dayfirst: bool = True, missing_label: str = 'Missing Date') -> pd.Series:
     """Parses date series into standard YYYY-MM-DD string format safely without swapping ISO dates."""

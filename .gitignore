@@ -10,12 +10,27 @@ env/
 
 # Data and export files (if applicable)
 *.tmp
+*.temp
+*.ps
+*.bak
+
+# Temporary Office / Excel lock files
+~$*
+~$*.xlsx
+~$*.xls
+~$*.xlsm
+~$*.csv
+
+# Generated reconciliation reports
+*Reconciliation_Report_*
 
 # OS generated files
 Thumbs.db
 Desktop.ini
+.DS_Store
 
 # IDE and Editor files
 .vscode/
 .idea/
+
 

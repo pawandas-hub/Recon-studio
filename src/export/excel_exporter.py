@@ -19,14 +19,15 @@ class ExcelReportExporter:
 
     # Columns that belong to the SAP side of a Sales reconciliation
     _SAP_SIDE_COLS = [
-        'Business_Unit', 'RefId_Ref1', 'Ref2_Invoice_No', 'Reference',
-        'Posting_Date', 'Total_CD_LC', 'SAP_Offset_Account',
+        'Business_Unit', 'InvoiceId', 'RefId_Ref1', 'Ref2_Invoice_No', 'Reference',
+        'Posting_Date', 'Total_CD_LC', 'SAP_Freight_Amount', 'SAP_GRN_ID', 'SAP_Offset_Account',
         'Mapped_SAP_Code', 'Format_Used',
     ]
     # Columns that belong to the DB side of a Sales reconciliation
     _DB_SIDE_COLS = [
-        'Business_Unit', 'RefId_Ref1', 'Ref2_Invoice_No', 'Reference',
-        'Sales_DocDate', 'Total_Sales_Value', 'Customer_Id', 'Retailer_Customer_Id',
+        'Business_Unit', 'InvoiceId', 'RefId_Ref1', 'Ref2_Invoice_No', 'Reference',
+        'Sales_DocDate', 'Total_Sales_Value', 'DB_Freight_Amount', 'Freight_Variance', 'DB_GRN_ID',
+        'Customer_Id', 'Retailer_Customer_Id',
         'COGSCostingCode', 'Format_Used',
     ]
 
@@ -231,31 +232,58 @@ class ExcelReportExporter:
 
             # Find Overall_Status column index (0-indexed within row tuple)
             status_col_idx = None
+            status_col_letter = None
             for idx, cell in enumerate(ws[1]):
                 if str(cell.value or '').strip() == 'Overall_Status':
                     status_col_idx = idx
+                    status_col_letter = get_column_letter(idx + 1)
                     break
 
             total_rows = max(ws.max_row - 1, 1)
-            row_num = 0
-            for row in ws.iter_rows(min_row=2):
-                row_num += 1
-                status_val = str(row[status_col_idx].value if status_col_idx is not None else '').strip()
-                is_matched = status_val.lower() == 'matched'
-                row_fill = green_fill if is_matched else red_fill
-                row_font_color = self.config['green_font_color'] if is_matched else self.config['red_font_color']
-                for idx, cell in enumerate(row):
-                    cell.border = thin_border
-                    cell.fill = row_fill
-                    if idx == status_col_idx:
-                        cell.font = Font(color=row_font_color, bold=True)
-                if row_num % max(total_rows // 10, 1) == 0:
-                    report(f"Styling {sheet_label}", row_num, total_rows)
 
-            # Auto column widths
-            for col in ws.columns:
-                max_len = max((len(str(cell.value or '')) for cell in col), default=10)
-                ws.column_dimensions[get_column_letter(col[0].column)].width = min(max(max_len + 3, 12), 60)
+            # Fast path for large sheets (> 3,000 rows): use native Excel conditional formatting
+            # to avoid generating millions of Python cell style objects
+            if total_rows > 3000 and status_col_letter:
+                from openpyxl.formatting.rule import FormulaRule
+                rule_green = FormulaRule(
+                    formula=[f'${status_col_letter}2="Matched"'],
+                    fill=green_fill
+                )
+                rule_red = FormulaRule(
+                    formula=[f'AND(${status_col_letter}2<>"", ${status_col_letter}2<>"Matched")'],
+                    fill=red_fill
+                )
+                last_col_letter = get_column_letter(ws.max_column)
+                cell_range = f'A2:{last_col_letter}{ws.max_row}'
+                ws.conditional_formatting.add(cell_range, rule_green)
+                ws.conditional_formatting.add(cell_range, rule_red)
+                report(f"Styling {sheet_label}", total_rows, total_rows)
+            else:
+                row_num = 0
+                for row in ws.iter_rows(min_row=2):
+                    row_num += 1
+                    status_val = str(row[status_col_idx].value if status_col_idx is not None else '').strip()
+                    is_matched = status_val.lower() == 'matched'
+                    row_fill = green_fill if is_matched else red_fill
+                    row_font_color = self.config['green_font_color'] if is_matched else self.config['red_font_color']
+                    for idx, cell in enumerate(row):
+                        cell.border = thin_border
+                        cell.fill = row_fill
+                        if idx == status_col_idx:
+                            cell.font = Font(color=row_font_color, bold=True)
+                    if row_num % max(total_rows // 10, 1) == 0:
+                        report(f"Styling {sheet_label}", row_num, total_rows)
+
+            # Fast auto column widths (sample up to 300 rows on large tables)
+            sample_limit = min(ws.max_row, 300) if total_rows > 3000 else ws.max_row
+            for col_idx in range(1, ws.max_column + 1):
+                col_letter = get_column_letter(col_idx)
+                max_len = 10
+                for r in range(1, sample_limit + 1):
+                    val_str = str(ws.cell(row=r, column=col_idx).value or '')
+                    if len(val_str) > max_len:
+                        max_len = len(val_str)
+                ws.column_dimensions[col_letter].width = min(max(max_len + 3, 12), 60)
 
             report(f"Styling {sheet_label}", total_rows, total_rows)
 
@@ -269,13 +297,22 @@ class ExcelReportExporter:
                 cell.font = header_font
                 cell.alignment = Alignment(horizontal='center', vertical='center')
 
-            for row in ws.iter_rows(min_row=2):
-                for cell in row:
-                    cell.border = thin_border
+            total_rows = max(ws.max_row - 1, 1)
+            # Only apply individual borders if rows are reasonably sized (<= 3000)
+            if total_rows <= 3000:
+                for row in ws.iter_rows(min_row=2):
+                    for cell in row:
+                        cell.border = thin_border
 
-            for col in ws.columns:
-                max_len = max((len(str(cell.value or '')) for cell in col), default=10)
-                ws.column_dimensions[get_column_letter(col[0].column)].width = min(max(max_len + 3, 12), 60)
+            sample_limit = min(ws.max_row, 300) if total_rows > 3000 else ws.max_row
+            for col_idx in range(1, ws.max_column + 1):
+                col_letter = get_column_letter(col_idx)
+                max_len = 10
+                for r in range(1, sample_limit + 1):
+                    val_str = str(ws.cell(row=r, column=col_idx).value or '')
+                    if len(val_str) > max_len:
+                        max_len = len(val_str)
+                ws.column_dimensions[col_letter].width = min(max(max_len + 3, 12), 60)
 
             report(f"Styling {sheet_label}", 1, 1)
 

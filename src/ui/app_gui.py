@@ -29,6 +29,7 @@ from dataclasses import asdict, dataclass
 from tkinter import filedialog, messagebox, ttk
 from typing import Callable, Dict, List, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 
 from ..export.excel_exporter import ExcelReportExporter
@@ -231,7 +232,7 @@ def attach_copy_menu(tree: ttk.Treeview, root_app: tk.Tk) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _sales_reference(row) -> str:
-    for col in ("Ref2_Invoice_No", "RefId_Ref1", "Reference"):
+    for col in ("InvoiceId", "Ref2_Invoice_No", "RefId_Ref1", "Reference"):
         val = row.get(col, "")
         if not pd.isna(val) and str(val).strip():
             return str(val)
@@ -264,31 +265,65 @@ class DonutChart(tk.Canvas):
 
     def update_segments(self, matched: int, review: int, mismatch: int, t: ThemeVars):
         self.delete("all")
-        self._draw_arc(t.slate_soft, 0, 360, t)
+        cx, cy, r, sw = self._cx, self._cy, self._r, self._stroke_w
+        x0, y0 = cx - r, cy - r
+        x1, y1 = cx + r, cy + r
+
+        # Base track
+        self.create_oval(x0, y0, x1, y1, outline=t.slate_soft, width=sw)
+
         total = matched + review + mismatch
         if total == 0:
             return
+
+        items = [(matched, t.green), (review, t.amber), (mismatch, t.red)]
+        active = [(cnt, col) for cnt, col in items if cnt > 0]
+
+        if not active:
+            return
+
+        if len(active) == 1:
+            # Single status takes the full 360 degree ring
+            self.create_oval(x0, y0, x1, y1, outline=active[0][1], width=sw)
+            return
+
+        # When multiple segments exist, ensure every active segment has a visible
+        # slice of at least min_deg (e.g. 4.0 degrees) so small counts (e.g. 22 out of 111,660)
+        # do not have start and end points round to the exact same pixel in Windows GDI,
+        # which would cause GDI's Arc() function to erroneously draw a complete 360-degree ellipse.
+        min_deg = 4.0
+        extents = [cnt / total * 360.0 for cnt, _ in active]
+        below = [max(0.0, min_deg - ext) for ext in extents]
+        needed = sum(below)
+        if needed > 0:
+            above_excess = sum(max(0.0, ext - min_deg) for ext in extents)
+            for i in range(len(extents)):
+                if extents[i] < min_deg:
+                    extents[i] = min_deg
+                elif above_excess > 0:
+                    ratio = (extents[i] - min_deg) / above_excess
+                    extents[i] -= needed * ratio
+
         start = -90.0
-        for count, color in ((matched, t.green), (review, t.amber), (mismatch, t.red)):
-            if count:
-                extent = count / total * 360.0
-                self._draw_arc(color, start, extent, t, filled=True)
-                start += extent
+        for ext, (_, color) in zip(extents, active):
+            self.create_arc(x0, y0, x1, y1, start=start, extent=ext,
+                            style=tk.ARC, outline=color, width=sw)
+            start += ext
 
     def _draw_arc(self, color: str, start: float, extent: float, t: ThemeVars, filled: bool = False):
         cx, cy, r, sw = self._cx, self._cy, self._r, self._stroke_w
         x0, y0 = cx - r, cy - r
         x1, y1 = cx + r, cy + r
-        if filled:
+        if filled and extent < 360.0:
             self.create_arc(x0, y0, x1, y1, start=start, extent=extent,
                             style=tk.ARC, outline=color, width=sw)
         else:
-            self.create_arc(x0, y0, x1, y1, start=0, extent=359.9,
-                            style=tk.ARC, outline=color, width=sw)
+            self.create_oval(x0, y0, x1, y1, outline=color, width=sw)
 
     def clear(self, t: ThemeVars):
         self.delete("all")
-        self._draw_arc(t.slate_soft, 0, 360, t)
+        cx, cy, r, sw = self._cx, self._cy, self._r, self._stroke_w
+        self.create_oval(cx - r, cy - r, cx + r, cy + r, outline=t.slate_soft, width=sw)
 
 
 class ProgressRing(tk.Canvas):
@@ -530,6 +565,8 @@ class KpiDetailsModal(tk.Toplevel):
 class ReconApp(tk.Tk):
     """Recon Studio v3.0 — Complete Desktop Application."""
 
+    MAX_VIEW_ROWS = 1000
+
     def __init__(self):
         super().__init__()
         self.title("Recon Studio v3.0")
@@ -553,6 +590,7 @@ class ReconApp(tk.Tk):
         self._recon_mode = tk.StringVar(value="Sales")
         self._active_tab = "All"
         self._all_rows: list = []
+        self._visible_rows: list = []
         self._current_view_name = "Reconciliation"
 
         # Progress bar state
@@ -1563,10 +1601,11 @@ class ReconApp(tk.Tk):
         self._rep_count_lbl.config(text=f"Active Reconciliation Details ({total:,} records)")
         if self._all_rows:
             matched_n = sum(1 for r in self._all_rows if r.get("tag") == "matched")
+            display_note = f" (showing top {self.MAX_VIEW_ROWS:,})" if total > self.MAX_VIEW_ROWS else ""
             self._rep_subtitle.config(
-                text=f"Current Run: {total:,} total records  ·  {matched_n:,} matched ({matched_n/total*100:.1f}%)  ·  {total - matched_n:,} exceptions"
+                text=f"Current Run: {total:,} total records{display_note}  ·  {matched_n:,} matched ({matched_n/total*100:.1f}%)  ·  {total - matched_n:,} exceptions"
             )
-            for r in self._all_rows:
+            for r in self._all_rows[:self.MAX_VIEW_ROWS]:
                 self._rep_tree.insert("", tk.END,
                                       values=(r.get("src", ""), r.get("ref", ""), r.get("bu", ""),
                                               r.get("posting", ""), r.get("sap_amt", ""),
@@ -1788,6 +1827,12 @@ class ReconApp(tk.Tk):
                 progress_callback=lambda stage, cur, tot: self.after(0, self._on_engine_progress, stage, cur, tot),
                 cancel_event=self._cancel_event,
             )
+            # Pre-build display rows in background worker thread to prevent freezing the GUI thread
+            if self.results_df is not None and not self.results_df.empty:
+                self.after(0, lambda: self._on_engine_progress("Preparing report views…", 1, 1))
+                self._all_rows = self._vectorized_build_rows(self.results_df)
+            else:
+                self._all_rows = []
         except RuntimeError as err:
             if self._prog_cancelled or "cancelled" in str(err).lower():
                 pass
@@ -1838,9 +1883,13 @@ class ReconApp(tk.Tk):
             self._status_lbl.config(text="No results — check files")
             return
 
+        # Complete progress bar and flush GUI redraw immediately!
         self._complete_progress_bar(done=True)
+        self.update_idletasks()
+
         self._update_kpis()
-        self._build_result_rows()
+        if not hasattr(self, "_all_rows") or not self._all_rows:
+            self._build_result_rows()
 
         total_n = len(self.results_df)
         matched_n = int((self.results_df["Overall_Status"] == "Matched").sum())
@@ -1901,59 +1950,77 @@ class ReconApp(tk.Tk):
         self._legend_labels["review"].config(text=str(review))
         self._legend_labels["mismatch"].config(text=str(max(0, mismatch)))
 
-    def _build_result_rows(self):
-        df = self.results_df
-        if df is None:
-            self._all_rows = []
-            return
-        self._all_rows = []
+    @classmethod
+    def _vectorized_build_rows(cls, df: pd.DataFrame) -> list:
+        if df is None or df.empty:
+            return []
 
-        for _, row in df.iterrows():
-            recon_type = row.get("Recon_Type", "Sales")
+        recon_type = df.get("Recon_Type", pd.Series("Sales", index=df.index)).fillna("Sales")
+        is_sales = recon_type == "Sales"
 
-            if recon_type == "Sales":
-                ref = _sales_reference(row)
-                sap_amt = row.get("Total_CD_LC", 0) or 0
-                book_amt = row.get("Total_Sales_Value", 0) or 0
-                variance = row.get("Amount_Variance", 0) or 0
-                posting = row.get("Posting_Date", "")
-                bu = row.get("Business_Unit", "")
-            else:
-                ref = row.get("Bank_UTR", "")
-                sap_amt = row.get("SAP_Amount", 0) or 0
-                book_amt = row.get("Bank_Amount", 0) or 0
-                variance = row.get("Amount_Variance", 0) or 0
-                posting = row.get("SAP_Posting_Date", "")
-                bu = row.get("Bank_Name", "")
+        sales_ref = pd.Series("", index=df.index, dtype=str)
+        for col in ("Reference", "RefId_Ref1", "Ref2_Invoice_No", "InvoiceId"):
+            if col in df.columns:
+                val = df[col].fillna("").astype(str)
+                mask = val.str.strip() != ""
+                sales_ref = np.where(mask, val, sales_ref)
 
-            status = row.get("Overall_Status", "")
-            remarks = row.get("Reconciliation_Remarks", "")
+        bank_ref = df.get("Bank_UTR", pd.Series("", index=df.index)).fillna("").astype(str)
+        refs = np.where(is_sales, sales_ref, bank_ref)
 
-            try:
-                v = float(variance)
-                var_str = "—" if abs(v) < 0.01 else (f"+{_fmt_inr(v)}" if v > 0 else f"-{_fmt_inr(abs(v))}")
-            except (TypeError, ValueError):
-                var_str = str(variance)
+        bu_sales = df.get("Business_Unit", pd.Series("", index=df.index)).fillna("").astype(str)
+        bu_coll = df.get("Bank_Name", pd.Series("", index=df.index)).fillna("").astype(str)
+        bus = np.where(is_sales, bu_sales, bu_coll)
 
-            tag = "matched" if "Matched" in str(status) and "Not" not in str(status) else (
-                "review" if "review" in str(status).lower() else (
-                    "missing" if "Missing" in str(status) else "mismatch"
-                )
-            )
+        post_sales = df.get("Posting_Date", pd.Series("", index=df.index)).fillna("").astype(str)
+        post_coll = df.get("SAP_Posting_Date", pd.Series("", index=df.index)).fillna("").astype(str)
+        postings = np.where(is_sales, post_sales, post_coll)
 
-            self._all_rows.append({
-                "src": recon_type,
+        sap_amt_s = df.get("Total_CD_LC", pd.Series(0.0, index=df.index)).fillna(0.0)
+        sap_amt_c = df.get("SAP_Amount", pd.Series(0.0, index=df.index)).fillna(0.0)
+        sap_amts = np.where(is_sales, sap_amt_s, sap_amt_c)
+
+        book_amt_s = df.get("Total_Sales_Value", pd.Series(0.0, index=df.index)).fillna(0.0)
+        book_amt_c = df.get("Bank_Amount", pd.Series(0.0, index=df.index)).fillna(0.0)
+        book_amts = np.where(is_sales, book_amt_s, book_amt_c)
+
+        variances = df.get("Amount_Variance", pd.Series(0.0, index=df.index)).fillna(0.0)
+        statuses = df.get("Overall_Status", pd.Series("", index=df.index)).fillna("").astype(str)
+        remarks = df.get("Reconciliation_Remarks", pd.Series("", index=df.index)).fillna("").astype(str)
+
+        sap_amt_strs = [f"₹{abs(float(v)):,.2f}" if v else "₹0.00" for v in sap_amts]
+        book_amt_strs = [f"₹{abs(float(v)):,.2f}" if v else "₹0.00" for v in book_amts]
+        var_strs = ["—" if abs(float(v)) < 0.01 else (f"+₹{float(v):,.2f}" if float(v) > 0 else f"-₹{abs(float(v)):,.2f}") for v in variances]
+
+        status_lower = statuses.str.lower()
+        is_matched = statuses.str.contains("Matched", na=False) & ~statuses.str.contains("Not", na=False)
+        is_review = status_lower.str.contains("review", na=False)
+        is_missing = statuses.str.contains("Missing", na=False)
+        tags = np.where(is_matched, "matched",
+               np.where(is_review, "review",
+               np.where(is_missing, "missing", "mismatch")))
+
+        return [
+            {
+                "src": r_type,
                 "ref": ref,
                 "bu": bu,
-                "posting": str(posting),
-                "sap_amt": _fmt_inr(sap_amt),
-                "book_amt": _fmt_inr(book_amt),
-                "variance": var_str,
-                "status": str(status),
-                "remarks": str(remarks),
+                "posting": post,
+                "sap_amt": s_amt,
+                "book_amt": b_amt,
+                "variance": var,
+                "status": stat,
+                "remarks": rem,
                 "tag": tag,
-                "search_str": f"{ref} {bu} {recon_type} {status} {remarks}".lower(),
-            })
+                "search_str": f"{ref} {bu} {r_type} {stat} {rem}".lower(),
+            }
+            for r_type, ref, bu, post, s_amt, b_amt, var, stat, rem, tag in zip(
+                recon_type, refs, bus, postings, sap_amt_strs, book_amt_strs, var_strs, statuses, remarks, tags
+            )
+        ]
+
+    def _build_result_rows(self):
+        self._all_rows = self._vectorized_build_rows(self.results_df)
 
     def _filter_table(self):
         if not hasattr(self, "_tree") or not self._tree.winfo_exists():
@@ -1970,40 +2037,67 @@ class ReconApp(tk.Tk):
                 return False
             return True
 
-        visible = [r for r in self._all_rows if _keep(r)]
-        self._render_table(visible)
+        self._visible_rows = [r for r in self._all_rows if _keep(r)]
+        self._render_table(self._visible_rows)
 
         all_n = len(self._all_rows)
         sales_n = sum(1 for r in self._all_rows if r["src"] == "Sales")
         coll_n = sum(1 for r in self._all_rows if r["src"] == "Collection")
-        self._tab_btns["All"].config(text=f"All ({all_n})" if all_n else "All")
-        self._tab_btns["Sales"].config(text=f"Sales ({sales_n})" if sales_n else "Sales")
-        self._tab_btns["Coll"].config(text=f"Collection ({coll_n})" if coll_n else "Collection")
+        self._tab_btns["All"].config(text=f"All ({all_n:,})" if all_n else "All")
+        self._tab_btns["Sales"].config(text=f"Sales ({sales_n:,})" if sales_n else "Sales")
+        self._tab_btns["Coll"].config(text=f"Collection ({coll_n:,})" if coll_n else "Collection")
 
     def _render_table(self, rows: list):
         if not hasattr(self, "_tree") or not self._tree.winfo_exists():
             return
         for item in self._tree.get_children(""):
             self._tree.delete(item)
-        for r in rows:
+
+        display_rows = rows[:self.MAX_VIEW_ROWS]
+        for r in display_rows:
             self._tree.insert("", tk.END,
                               values=(r["src"], r["ref"], r["bu"], r["posting"],
                                       r["sap_amt"], r["book_amt"], r["variance"], r["status"]),
                               tags=(r["tag"],))
         total = len(self._all_rows)
         vis = len(rows)
-        self._row_count_lbl.config(text=f"{vis:,} of {total:,} rows" if total else "0 rows")
+        if vis > self.MAX_VIEW_ROWS:
+            self._row_count_lbl.config(
+                text=f"Showing first {self.MAX_VIEW_ROWS:,} of {vis:,} rows ({total:,} total) — filter or Export Excel for full list"
+            )
+        else:
+            self._row_count_lbl.config(text=f"{vis:,} of {total:,} rows" if total else "0 rows")
 
     def _sort_tree(self, col: str):
-        items = [(self._tree.set(k, col), k) for k in self._tree.get_children("")]
-        try:
-            items.sort(key=lambda t: float(str(t[0]).replace("₹", "").replace(",", "").replace("—", "0") or 0))
-        except ValueError:
-            items.sort(key=lambda t: t[0].lower())
-        if items and self._tree.set(items[0][1], col) == self._tree.set(self._tree.get_children("")[0], col):
-            items.reverse()
-        for idx, (_, k) in enumerate(items):
-            self._tree.move(k, "", idx)
+        if not hasattr(self, "_visible_rows") or not self._visible_rows:
+            return
+
+        col_key_map = {
+            "Source": "src",
+            "Reference": "ref",
+            "Business Unit": "bu",
+            "SAP Posting": "posting",
+            "SAP Amount": "sap_amt",
+            "Book Amount": "book_amt",
+            "Variance": "variance",
+            "Status": "status",
+        }
+        key = col_key_map.get(col, col.lower())
+
+        reverse = getattr(self, f"_sort_rev_{col}", False)
+        setattr(self, f"_sort_rev_{col}", not reverse)
+
+        def _parse_val(r):
+            v = r.get(key, "")
+            if key in ("sap_amt", "book_amt", "variance"):
+                try:
+                    return float(str(v).replace("₹", "").replace(",", "").replace("+", "").replace("—", "0"))
+                except ValueError:
+                    return 0.0
+            return str(v).lower()
+
+        self._visible_rows.sort(key=_parse_val, reverse=reverse)
+        self._render_table(self._visible_rows)
 
     def _set_recon_mode(self, mode: str):
         self._recon_mode.set(mode)
@@ -2163,9 +2257,10 @@ class ReconApp(tk.Tk):
                                 done=done, cancelled=cancelled or errored, errored=errored)
         if done:
             self._prog_fill.config(bg=t.green)
-            for chip in self._phase_chips:
-                chip.config(bg=t.green_soft, fg=t.green)
+            for i, chip in enumerate(self._phase_chips):
+                chip.config(bg=t.green_soft, fg=t.green, text=f"✓ {self._prog_phases[i]}")
             self._prog_title.config(text="Complete ✔", fg=t.green)
+            self._prog_sub.config(text="Reconciliation completed successfully")
             self._btn_open_report.pack(pady=2)
             self._btn_prog_hide.pack(pady=2)
             self._btn_pause.pack_forget()
@@ -2190,6 +2285,10 @@ class ReconApp(tk.Tk):
             self._btn_minimize.pack_forget()
             self._btn_prog_hide.pack(pady=2)
             self.after(5000, self._hide_prog)
+        try:
+            self.update_idletasks()
+        except Exception:
+            pass
 
     def _toggle_pause(self):
         self._prog_paused = not self._prog_paused
@@ -2303,7 +2402,20 @@ class ReconApp(tk.Tk):
         root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         creation_flags = 0x08000000 if sys.platform == "win32" else 0
 
+        def _clean_err_msg(raw: str) -> str:
+            """Strip benign git warning lines (e.g. LF/CRLF) to keep actual error concise."""
+            lines = [line.strip() for line in raw.splitlines() if line.strip() and not line.strip().startswith("warning:")]
+            return "\n".join(lines).strip() or raw.strip()
+
         try:
+            # 0. Clean stale git lock if left behind from an interrupted operation
+            lock_path = os.path.join(root_dir, ".git", "index.lock")
+            if os.path.exists(lock_path):
+                try:
+                    os.remove(lock_path)
+                except Exception:
+                    pass
+
             # 1. Check working directory status
             status_res = subprocess.run(
                 ["git", "status", "--porcelain"],
@@ -2334,7 +2446,13 @@ class ReconApp(tk.Tk):
                     creationflags=creation_flags,
                 )
                 if add_res.returncode != 0:
-                    err = add_res.stderr.strip() or add_res.stdout.strip()
+                    err = _clean_err_msg(add_res.stderr or add_res.stdout)
+                    if "Permission denied" in err or "unable to index file" in err:
+                        err = (
+                            "Microsoft Excel or another application is holding an open file lock.\n\n"
+                            "Please close Microsoft Excel and any open report files, then try again.\n\n"
+                            f"Details:\n{err}"
+                        )
                     self.after(0, self._on_sync_finished, False, f"Failed to stage changes:\n{err}", False)
                     return
 
@@ -2346,18 +2464,26 @@ class ReconApp(tk.Tk):
                     creationflags=creation_flags,
                 )
                 if commit_res.returncode != 0:
-                    err = commit_res.stderr.strip() or commit_res.stdout.strip()
-                    self.after(0, self._on_sync_finished, False, f"Failed to commit changes:\n{err}", False)
-                    return
+                    err = _clean_err_msg(commit_res.stderr or commit_res.stdout)
+                    if "nothing to commit" not in err.lower():
+                        self.after(0, self._on_sync_finished, False, f"Failed to commit changes:\n{err}", False)
+                        return
 
-            # 4. Push commits to GitHub origin main
+            # 4. Pull --rebase (to prevent push conflicts if remote has upstream changes)
+            subprocess.run(
+                ["git", "pull", "--rebase", "origin", "main"],
+                cwd=root_dir, capture_output=True, text=True, timeout=60,
+                creationflags=creation_flags,
+            )
+
+            # 5. Push commits to GitHub origin main
             push_res = subprocess.run(
                 ["git", "push", "origin", "main"],
                 cwd=root_dir, capture_output=True, text=True, timeout=90,
                 creationflags=creation_flags,
             )
             if push_res.returncode != 0:
-                err = push_res.stderr.strip() or push_res.stdout.strip()
+                err = _clean_err_msg(push_res.stderr or push_res.stdout)
                 self.after(0, self._on_sync_finished, False, f"Failed to push to GitHub:\n{err}", False)
                 return
 
