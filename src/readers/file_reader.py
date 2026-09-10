@@ -19,6 +19,31 @@ def clear_cache() -> None:
     _FILE_CACHE.clear()
 
 
+def _make_unique_cols(df: pd.DataFrame) -> pd.DataFrame:
+    """Ensure dataframe has uniquely named columns so pd.concat never raises InvalidIndexError."""
+    if df is None or df.empty:
+        return df
+    cols = list(df.columns)
+    seen = {}
+    new_cols = []
+    has_dups = False
+    for c in cols:
+        name = str(c).strip() if c is not None else "Unnamed"
+        if not name or name.lower() == "nan":
+            name = "Unnamed"
+        if name in seen:
+            seen[name] += 1
+            new_cols.append(f"{name}_{seen[name]}")
+            has_dups = True
+        else:
+            seen[name] = 0
+            new_cols.append(name)
+    if has_dups:
+        df = df.copy()
+        df.columns = new_cols
+    return df
+
+
 def read_file_tables(file_path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Reads a data file (.xlsx, .xls, .tsv, .csv, .html) and extracts primary and secondary tables.
@@ -38,7 +63,10 @@ def read_file_tables(file_path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
         df_bu, df_db = _FILE_CACHE[cache_key]
         return df_bu.copy(), df_db.copy()
 
-    result = _read_uncached(abs_path)
+    raw_bu, raw_db = _read_uncached(abs_path)
+    df_bu = _make_unique_cols(raw_bu)
+    df_db = _make_unique_cols(raw_db)
+    result = (df_bu, df_db)
     _FILE_CACHE[cache_key] = (result[0].copy(), result[1].copy())
     # Limit cache to 20 entries to prevent memory leak
     while len(_FILE_CACHE) > 20:

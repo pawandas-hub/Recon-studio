@@ -1,4 +1,5 @@
 """Excel Report Exporter with openpyxl styling — separate Sales and Collection sheets."""
+import shutil
 from typing import Callable, List, Optional
 
 import numpy as np
@@ -384,6 +385,7 @@ class ExcelReportExporter:
 
         if raw_sap_s is not None and isinstance(raw_sap_s, pd.DataFrame) and not raw_sap_s.empty:
             sales_sap_side_df = raw_sap_s.copy()
+            sales_sap_side_df = raw_sap_s
         elif not sales_df.empty:
             sales_sap_side_df, _ = self._split_sales_sides(sales_df)
         else:
@@ -391,6 +393,7 @@ class ExcelReportExporter:
 
         if raw_db_s is not None and isinstance(raw_db_s, pd.DataFrame) and not raw_db_s.empty:
             sales_db_side_df = raw_db_s.copy()
+            sales_db_side_df = raw_db_s
         elif not sales_df.empty:
             _, sales_db_side_df = self._split_sales_sides(sales_df)
         else:
@@ -402,6 +405,7 @@ class ExcelReportExporter:
 
         if raw_sap_c is not None and isinstance(raw_sap_c, pd.DataFrame) and not raw_sap_c.empty:
             coll_sap_side_df = raw_sap_c.copy()
+            coll_sap_side_df = raw_sap_c
         elif not coll_df.empty:
             coll_sap_side_df, _ = self._split_collection_sides(coll_df)
         else:
@@ -409,6 +413,7 @@ class ExcelReportExporter:
 
         if raw_bank_c is not None and isinstance(raw_bank_c, pd.DataFrame) and not raw_bank_c.empty:
             coll_bank_side_df = raw_bank_c.copy()
+            coll_bank_side_df = raw_bank_c
         elif not coll_df.empty:
             _, coll_bank_side_df = self._split_collection_sides(coll_df)
         else:
@@ -561,6 +566,7 @@ class ExcelReportExporter:
                 'constant_memory': True,
                 'default_date_format': 'yyyy-mm-dd',
                 'strings_to_numbers': False,
+                'nan_inf_to_errors': True,
             }
         )
 
@@ -623,11 +629,26 @@ class ExcelReportExporter:
             ws_exec.set_column(c_idx, c_idx, max(len(str(c_name)) + 4, 15))
 
         # ----------------------------------------------------------
-        # Helper: Stream data sheet
+        # Helpers: Vectorized stream & Instant XML sheet clone
         # ----------------------------------------------------------
-        def _stream_sheet(sheet_name: str, df: pd.DataFrame, apply_status_color: bool = True) -> None:
+        def _prepare_df_for_stream(df: pd.DataFrame) -> list:
+            """Ultra-fast vectorized sanitization and conversion of DataFrame to list of rows."""
             if df.empty:
-                return
+                return []
+            arr = df.to_numpy(dtype=object, na_value=None)
+            for c_idx in range(arr.shape[1]):
+                col_vals = arr[:, c_idx]
+                first_val = next((v for v in col_vals if v is not None), None)
+                if isinstance(first_val, str):
+                    for r_idx in range(arr.shape[0]):
+                        val = col_vals[r_idx]
+                        if isinstance(val, str) and val and val[0] in ('=', '+', '-', '@'):
+                            col_vals[r_idx] = "'" + val
+            return arr.tolist()
+
+        def _stream_sheet(sheet_name: str, df: pd.DataFrame, apply_status_color: bool = True):
+            if df.empty:
+                return None
             report(f"Writing {sheet_name} sheet", 0, len(df))
             ws = wb.add_worksheet(sheet_name)
             ws.freeze_panes(1, 0)
@@ -669,23 +690,91 @@ class ExcelReportExporter:
                     for v in row
                 ]
                 ws.write_row(r_i, 0, clean)
+            rows = _prepare_df_for_stream(df)
+            chunk = 25000
+            for r_i, row in enumerate(rows, 1):
+                ws.write_row(r_i, 0, row)
                 if r_i % chunk == 0:
                     report(f"Writing {sheet_name}", r_i, num_r)
 
             report(f"Writing {sheet_name}", num_r, num_r)
+            return ws
+
+        def _clone_identical_sheet(source_ws, target_sheet_name: str, df: pd.DataFrame, apply_status_color: bool = True):
+            """Instantly clones a worksheet's XML stream in <1s instead of re-streaming 100k+ rows."""
+            report(f"Writing {target_sheet_name} sheet", 0, len(df))
+            ws_target = wb.add_worksheet(target_sheet_name)
+            ws_target.freeze_panes(1, 0)
+            cols = list(df.columns)
+            num_c = len(cols)
+            num_r = len(df)
+            ws_target.autofilter(0, 0, num_r, num_c - 1)
+            ws_target.write_row(0, 0, cols, fmt_header)
+
+            if apply_status_color and 'Overall_Status' in cols:
+                stat_idx = cols.index('Overall_Status')
+                stat_letter = get_column_letter(stat_idx + 1)
+                ws_target.conditional_format(
+                    1, 0, num_r, num_c - 1,
+                    {'type': 'formula', 'criteria': f'=${stat_letter}2="Matched"', 'format': fmt_green}
+                )
+                ws_target.conditional_format(
+                    1, 0, num_r, num_c - 1,
+                    {'type': 'formula', 'criteria': f'=AND(${stat_letter}2<>"", ${stat_letter}2<>"Matched")', 'format': fmt_red}
+                )
+
+            sample = df.iloc[:30]
+            for c_i, c_n in enumerate(cols):
+                m_l = len(str(c_n))
+                for v in sample[c_n]:
+                    if v is not None and not pd.isna(v):
+                        l_v = len(str(v))
+                        if l_v > m_l:
+                            m_l = l_v
+                ws_target.set_column(c_i, c_i, min(max(m_l + 3, 12), 60))
+
+            try:
+                # Flush source worksheet
+                source_ws._write_single_row(num_r + 1)
+                source_ws.row_data_fh.flush()
+
+                # Sync dimensions
+                ws_target.dim_rowmin = source_ws.dim_rowmin
+                ws_target.dim_rowmax = source_ws.dim_rowmax
+                ws_target.dim_colmin = source_ws.dim_colmin
+                ws_target.dim_colmax = source_ws.dim_colmax
+                ws_target.previous_row = source_ws.previous_row
+
+                # Fast file copy
+                ws_target.row_data_fh.seek(0)
+                with open(source_ws.row_data_filename, 'r', encoding='utf-8') as f_src:
+                    shutil.copyfileobj(f_src, ws_target.row_data_fh)
+                ws_target.row_data_fh.flush()
+                report(f"Writing {target_sheet_name}", num_r, num_r)
+                return ws_target
+            except Exception:
+                # Fallback to standard streaming if file copy fails for any reason
+                return _stream_sheet(target_sheet_name, df, apply_status_color=apply_status_color)
 
         # ----------------------------------------------------------
         # 2. Recon Detailed Results
         # ----------------------------------------------------------
-        _stream_sheet('Recon Detailed Results', results_df, apply_status_color=True)
+        ws_recon = _stream_sheet('Recon Detailed Results', results_df, apply_status_color=True)
 
         # ----------------------------------------------------------
         # 3. Per-type sheets (Sales, Collection)
         # ----------------------------------------------------------
         if 'Recon_Type' in results_df.columns:
-            for recon_type, frame in results_df.groupby('Recon_Type', sort=False):
-                sheet_name = str(recon_type)[:31] or 'Results'
-                _stream_sheet(sheet_name, frame, apply_status_color=True)
+            recon_types = results_df['Recon_Type'].dropna().unique()
+            if len(recon_types) == 1 and ws_recon is not None:
+                # When all rows are single type (e.g. 100% Sales or 100% Collection),
+                # sheet is identical to Recon Detailed Results — clone instantly!
+                single_type = str(recon_types[0])[:31] or 'Results'
+                _clone_identical_sheet(ws_recon, single_type, results_df, apply_status_color=True)
+            else:
+                for recon_type, frame in results_df.groupby('Recon_Type', sort=False):
+                    sheet_name = str(recon_type)[:31] or 'Results'
+                    _stream_sheet(sheet_name, frame, apply_status_color=True)
 
         # ----------------------------------------------------------
         # 4. Raw sheets (exact uploaded or side-split data)
@@ -699,6 +788,7 @@ class ExcelReportExporter:
         if not coll_bank_side_df.empty:
             _stream_sheet('Collection - Bank Data', coll_bank_side_df, apply_status_color=False)
 
+        report("Finalizing Excel workbook", 0, 1)
         wb.close()
         report("Excel export complete", 1, 1)
 

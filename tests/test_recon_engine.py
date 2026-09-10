@@ -196,3 +196,22 @@ def test_generated_report_is_ignored_when_reusing_input_folder(project_root):
     assert set(results['Recon_Type']) == {'Sales'}
 
 
+def test_read_file_tables_deduplicates_duplicate_columns(tmp_path):
+    from src.readers.file_reader import _make_unique_cols, clear_cache
+    clear_cache()
+    # Test _make_unique_cols directly on a DataFrame with non-unique columns
+    df_dup = pd.DataFrame(
+        [[1, 2, 3, 4]],
+        columns=['City', 'State', 'City', 'State']
+    )
+    df_unique = _make_unique_cols(df_dup)
+    assert list(df_unique.columns) == ['City', 'State', 'City_1', 'State_1']
+    assert len(df_unique.columns) == len(set(df_unique.columns))
+
+    # Test concat with another dataframe with different columns (must not raise InvalidIndexError)
+    other = pd.DataFrame({"City": ["MUM"], "State": ["MH"], "DiffCol": [500]})
+    res = pd.concat([df_unique, other], ignore_index=True)
+    assert len(res) == 2
+
+
+
