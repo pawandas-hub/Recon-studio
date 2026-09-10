@@ -256,6 +256,91 @@ def _get_ist_time_str() -> str:
     ist = now_utc + datetime.timedelta(hours=5, minutes=30)
     return ist.strftime("%A, %d %b %Y - %I:%M:%S %p (IST)")
 
+def _render_live_clock_subtitle(muted_color: str, suffix: str = " · Tolerance ±₹1 · Auto-match on Ref ID / UTR") -> None:
+    """Render a real-time, second-by-second ticking IST digital clock without triggering Streamlit reruns."""
+    st.markdown(
+        f'<div style="font-size:0.8rem; font-weight:600; color:{muted_color}; margin-bottom:12px;">'
+        f'<span id="live-ist-clock">{_get_ist_time_str()}</span>{suffix}'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+    st.components.v1.html(
+        f"""
+        <div id="local-clock-container" style="display:none; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; font-size:0.8rem; font-weight:600; color:{muted_color}; line-height:22px;">
+            <span id="local-ist-clock">{_get_ist_time_str()}</span>{suffix}
+        </div>
+        <script>
+        (function() {{
+            function getISTString() {{
+                var now = new Date();
+                var utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+                var ist = new Date(utc + (3600000 * 5.5));
+                var weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                var weekday = weekdays[ist.getDay()];
+                var day = String(ist.getDate()).padStart(2, '0');
+                var month = months[ist.getMonth()];
+                var year = ist.getFullYear();
+                var hours = ist.getHours();
+                var ampm = hours >= 12 ? 'PM' : 'AM';
+                hours = hours % 12 || 12;
+                var hoursStr = String(hours).padStart(2, '0');
+                var minutes = String(ist.getMinutes()).padStart(2, '0');
+                var seconds = String(ist.getSeconds()).padStart(2, '0');
+                return weekday + ', ' + day + ' ' + month + ' ' + year + ' - ' + hoursStr + ':' + minutes + ':' + seconds + ' ' + ampm + ' (IST)';
+            }}
+
+            var updatedParent = false;
+            function tick() {{
+                var str = getISTString();
+                try {{
+                    var parentDoc = window.parent.document;
+                    var el = parentDoc.getElementById('live-ist-clock');
+                    if (el) {{
+                        el.textContent = str;
+                        updatedParent = true;
+                    }}
+                }} catch (e) {{}}
+
+                var localEl = document.getElementById('local-ist-clock');
+                if (localEl) localEl.textContent = str;
+
+                if (!updatedParent) {{
+                    var container = document.getElementById('local-clock-container');
+                    if (container) container.style.display = 'block';
+                    try {{
+                        var frame = window.frameElement;
+                        if (frame) {{
+                            frame.style.display = 'block';
+                            frame.style.height = '24px';
+                        }}
+                    }} catch (e) {{}}
+                }}
+            }}
+
+            try {{
+                var frame = window.frameElement;
+                if (frame) {{
+                    frame.style.height = '0px';
+                    frame.style.minHeight = '0px';
+                    frame.style.display = 'none';
+                    if (frame.parentElement) {{
+                        frame.parentElement.style.height = '0px';
+                        frame.parentElement.style.minHeight = '0px';
+                        frame.parentElement.style.margin = '0px';
+                        frame.parentElement.style.padding = '0px';
+                    }}
+                }}
+            }} catch (e) {{}}
+
+            tick();
+            setInterval(tick, 1000);
+        }})();
+        </script>
+        """,
+        height=0,
+    )
+
 def _first_valid(*vals):
     """Return the first non-null, non-empty value. Handles np.nan correctly."""
     for v in vals:
@@ -483,7 +568,7 @@ if st.session_state.active_view == "Reconciliation":
     
     with h_col1:
         st.markdown(f'<h2 style="font-size:1.45rem; font-weight:800; margin:0 0 2px 0; color:{T_TEXT};">Sales & Collection Reconciliation</h2>', unsafe_allow_html=True)
-        st.markdown(f'<div style="font-size:0.8rem; font-weight:600; color:{T_MUTED}; margin-bottom:12px;">{_get_ist_time_str()} · Tolerance ±₹1 · Auto-match on Ref ID / UTR</div>', unsafe_allow_html=True)
+        _render_live_clock_subtitle(T_MUTED)
 
     with h_col2:
         seg_options = ["Sales", "Collection", "Both"]
