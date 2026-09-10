@@ -409,21 +409,19 @@ class ExcelReportExporter:
                     report(f"Writing {sheet_name} sheet", 0, 1)
                     frame.to_excel(writer, sheet_name=sheet_name, index=False)
 
-            # Raw data sheets: only include for smaller datasets (<= 5,000 rows)
-            # Recon Detailed Results already contains all raw + recon columns together.
-            if len(results_df) <= 5000:
-                if not sales_sap_side_df.empty:
-                    report("Writing Sales - SAP Data sheet", 0, 1)
-                    sales_sap_side_df.to_excel(writer, sheet_name='Sales - SAP Data', index=False)
-                if not sales_db_side_df.empty:
-                    report("Writing Sales - DB Data sheet", 0, 1)
-                    sales_db_side_df.to_excel(writer, sheet_name='Sales - DB Data', index=False)
-                if not coll_sap_side_df.empty:
-                    report("Writing Collection - SAP Data sheet", 0, 1)
-                    coll_sap_side_df.to_excel(writer, sheet_name='Collection - SAP Data', index=False)
-                if not coll_bank_side_df.empty:
-                    report("Writing Collection - Bank Data sheet", 0, 1)
-                    coll_bank_side_df.to_excel(writer, sheet_name='Collection - Bank Data', index=False)
+            # Raw data sheets (exact uploaded or side-split data)
+            if not sales_sap_side_df.empty:
+                report("Writing Sales - SAP Data sheet", 0, 1)
+                sales_sap_side_df.to_excel(writer, sheet_name='Sales - SAP Data', index=False)
+            if not sales_db_side_df.empty:
+                report("Writing Sales - DB Data sheet", 0, 1)
+                sales_db_side_df.to_excel(writer, sheet_name='Sales - DB Data', index=False)
+            if not coll_sap_side_df.empty:
+                report("Writing Collection - SAP Data sheet", 0, 1)
+                coll_sap_side_df.to_excel(writer, sheet_name='Collection - SAP Data', index=False)
+            if not coll_bank_side_df.empty:
+                report("Writing Collection - Bank Data sheet", 0, 1)
+                coll_bank_side_df.to_excel(writer, sheet_name='Collection - Bank Data', index=False)
 
             wb = writer.book
 
@@ -647,17 +645,16 @@ class ExcelReportExporter:
                 _stream_sheet(sheet_name, frame, apply_status_color=True)
 
         # ----------------------------------------------------------
-        # 4. Raw sheets (only for <= 5000 rows)
+        # 4. Raw sheets (exact uploaded or side-split data)
         # ----------------------------------------------------------
-        if len(results_df) <= 5000:
-            if not sales_sap_side_df.empty:
-                _stream_sheet('Sales - SAP Data', sales_sap_side_df, apply_status_color=False)
-            if not sales_db_side_df.empty:
-                _stream_sheet('Sales - DB Data', sales_db_side_df, apply_status_color=False)
-            if not coll_sap_side_df.empty:
-                _stream_sheet('Collection - SAP Data', coll_sap_side_df, apply_status_color=False)
-            if not coll_bank_side_df.empty:
-                _stream_sheet('Collection - Bank Data', coll_bank_side_df, apply_status_color=False)
+        if not sales_sap_side_df.empty:
+            _stream_sheet('Sales - SAP Data', sales_sap_side_df, apply_status_color=False)
+        if not sales_db_side_df.empty:
+            _stream_sheet('Sales - DB Data', sales_db_side_df, apply_status_color=False)
+        if not coll_sap_side_df.empty:
+            _stream_sheet('Collection - SAP Data', coll_sap_side_df, apply_status_color=False)
+        if not coll_bank_side_df.empty:
+            _stream_sheet('Collection - Bank Data', coll_bank_side_df, apply_status_color=False)
 
         wb.close()
         report("Excel export complete", 1, 1)

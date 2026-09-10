@@ -280,6 +280,8 @@ def test_xlsxwriter_fast_engine(tmp_path):
     assert 'Executive Summary' in wb.sheetnames
     assert 'Recon Detailed Results' in wb.sheetnames
     assert 'Sales' in wb.sheetnames
+    assert 'Sales - SAP Data' in wb.sheetnames
+    assert 'Sales - DB Data' in wb.sheetnames
 
     # Check data content
     ws = wb['Recon Detailed Results']
