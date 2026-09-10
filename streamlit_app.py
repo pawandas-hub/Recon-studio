@@ -757,7 +757,6 @@ if st.session_state.active_view == "Reconciliation":
                     return f"color: {T_AMBER}; font-weight: 700;"
                 return ""
 
-            styled_t = df_final.style.map(style_status, subset=["Status"])
             # Bug 13: Styler.map added in pandas 2.1 — fallback to applymap for older versions
             styler = df_final.style
             styled_t = (
@@ -784,13 +783,6 @@ if st.session_state.active_view == "Reconciliation":
                         os.unlink(tmp_path)
                     except OSError:
                         pass
-                st.download_button(
-                    "📊  Export Excel Report",
-                    data=xl_bytes,
-                    file_name="Reconciliation_Summary_Report.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    type="primary",
-                )
                 if xl_bytes:
                     st.download_button(
                         "📊  Export Excel Report",
@@ -798,6 +790,7 @@ if st.session_state.active_view == "Reconciliation":
                         file_name="Reconciliation_Summary_Report.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         type="primary",
+                        key="btn_export_excel_summary",
                     )
                 else:
                     st.warning("⚠️ Excel export failed. Try again.")
