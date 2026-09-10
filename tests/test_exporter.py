@@ -253,3 +253,41 @@ def test_sales_export_with_nan_bu(tmp_path):
     assert 'Recon Detailed Results' in wb.sheetnames
 
 
+def test_xlsxwriter_fast_engine(tmp_path):
+    """Verify that xlsxwriter engine creates valid styled workbook with summary and detailed sheets."""
+    from src.export.report_verifier import verify_workbook
+    output_file = str(tmp_path / "fast_report.xlsx")
+
+    results_df = pd.DataFrame({
+        'Recon_Type': ['Sales', 'Sales'],
+        'Business_Unit': ['10', '24'],
+        'Ref2_Invoice_No': ['INV01', 'INV02'],
+        'Posting_Date': ['2026-08-01', '2026-08-02'],
+        'Sales_DocDate': ['2026-08-01', '2026-08-02'],
+        'Total_CD_LC': [500.0, 1000.0],
+        'Total_Sales_Value': [500.0, 950.0],
+        'Amount_Variance': [0.0, 50.0],
+        'Overall_Status': ['Matched', 'Not Matched'],
+        'Reconciliation_Remarks': ['MATCHED', 'MISMATCHED: Amount Variance (50.0)'],
+        'Customer_Id': ['C1', 'C2'],
+    })
+
+    exporter = ExcelReportExporter()
+    exporter.export(output_file, results_df, engine="xlsxwriter")
+
+    assert os.path.exists(output_file)
+    wb = openpyxl.load_workbook(output_file)
+    assert 'Executive Summary' in wb.sheetnames
+    assert 'Recon Detailed Results' in wb.sheetnames
+    assert 'Sales' in wb.sheetnames
+
+    # Check data content
+    ws = wb['Recon Detailed Results']
+    assert ws.max_row == 3
+
+    # Check report verifier
+    verification = verify_workbook(output_file)
+    assert verification.passed, verification.errors
+
+
+

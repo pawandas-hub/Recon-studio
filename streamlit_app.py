@@ -816,7 +816,7 @@ if st.session_state.active_view == "Reconciliation":
                     )
                 else:
                     if st.button("📊  Generate Excel Report (.xlsx)", type="primary", key="btn_prep_excel"):
-                        with st.spinner(f"⏳ Generating styled Excel report for {len(results_df):,} records... Please wait a moment..."):
+                        with st.spinner(f"⏳ Fast-generating styled Excel report for {len(results_df):,} records... Please wait a few seconds..."):
                             exporter = ExcelReportExporter()
                             tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
                             tmp_path = tmp.name
@@ -927,7 +927,7 @@ elif st.session_state.active_view == "Reports":
             )
         else:
             if st.button("📊  Generate Executive Report Workbook (.xlsx)", type="primary", key="btn_prep_exec_report"):
-                with st.spinner(f"⏳ Generating Executive Report for {len(results_df):,} records... Please wait a moment..."):
+                with st.spinner(f"⏳ Fast-generating Executive Report for {len(results_df):,} records... Please wait a few seconds..."):
                     exporter = ExcelReportExporter()
                     tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
                     tmp_path = tmp.name

@@ -8,6 +8,12 @@ from openpyxl.utils import get_column_letter
 
 from ..core.constants import STYLE_CONFIG
 
+try:
+    import xlsxwriter
+    HAS_XLSXWRITER = True
+except ImportError:
+    HAS_XLSXWRITER = False
+
 def _sanitize_cell_value(value):
     if isinstance(value, str) and value.startswith(('=', '+', '-', '@')):
         return f"'{value}"
@@ -179,6 +185,7 @@ class ExcelReportExporter:
         raw_sales_db: Optional[pd.DataFrame] = None,
         raw_collection_sap: Optional[pd.DataFrame] = None,
         raw_collection_bank: Optional[pd.DataFrame] = None,
+        engine: Optional[str] = "auto",
     ) -> None:
         def report(stage: str, current: int = 0, total: int = 0) -> None:
             if progress_callback:
@@ -199,7 +206,6 @@ class ExcelReportExporter:
             )
             var_total = results_df['Amount_Variance'].sum() if 'Amount_Variance' in results_df else 0.0
             total_count = len(results_df)
-            matched_count = int((results_df['Overall_Status'] == 'Matched').sum())
             matched_count = int((results_df['Overall_Status'] == 'Matched').sum()) if 'Overall_Status' in results_df.columns else 0
             kpi_summary = pd.DataFrame([{
                 'Total Records Reconciled': total_count,
@@ -365,6 +371,30 @@ class ExcelReportExporter:
         else:
             coll_bank_side_df = pd.DataFrame()
 
+        # Check whether to use fast xlsxwriter engine
+        use_fast = False
+        if engine == "xlsxwriter":
+            use_fast = HAS_XLSXWRITER
+        elif engine == "openpyxl":
+            use_fast = False
+        else:  # auto
+            use_fast = HAS_XLSXWRITER and len(results_df) > 3000
+
+        if use_fast:
+            self._export_fast_xlsxwriter(
+                save_path=save_path,
+                results_df=results_df,
+                kpi_summary=kpi_summary,
+                sales_summary_table=sales_summary_table,
+                coll_summary_table=coll_summary_table,
+                sales_sap_side_df=sales_sap_side_df,
+                sales_db_side_df=sales_db_side_df,
+                coll_sap_side_df=coll_sap_side_df,
+                coll_bank_side_df=coll_bank_side_df,
+                report=report,
+            )
+            return
+
         with pd.ExcelWriter(save_path, engine='openpyxl') as writer:
             report("Writing Executive Summary sheet", 0, 1)
             kpi_summary.to_excel(writer, sheet_name='Executive Summary', index=False)
@@ -372,8 +402,8 @@ class ExcelReportExporter:
             report("Writing Recon Detailed Results sheet", 0, 1)
             results_df.to_excel(writer, sheet_name='Recon Detailed Results', index=False)
 
-            # Per-type sheets (Sales / Collection) — only if multiple types exist
-            if 'Recon_Type' in results_df.columns and results_df['Recon_Type'].nunique() > 1:
+            # Per-type sheets (Sales / Collection)
+            if 'Recon_Type' in results_df.columns:
                 for recon_type, frame in results_df.groupby('Recon_Type', sort=False):
                     sheet_name = str(recon_type)[:31] or 'Results'
                     report(f"Writing {sheet_name} sheet", 0, 1)
@@ -468,6 +498,170 @@ class ExcelReportExporter:
                     _style_plain_sheet(wb[plain_sheet], plain_sheet)
 
         report("Excel export complete", 1, 1)
+
+    def _export_fast_xlsxwriter(
+        self,
+        save_path: str,
+        results_df: pd.DataFrame,
+        kpi_summary: pd.DataFrame,
+        sales_summary_table: pd.DataFrame,
+        coll_summary_table: pd.DataFrame,
+        sales_sap_side_df: pd.DataFrame,
+        sales_db_side_df: pd.DataFrame,
+        coll_sap_side_df: pd.DataFrame,
+        coll_bank_side_df: pd.DataFrame,
+        report: Callable[[str, int, int], None],
+    ) -> None:
+        """High-performance streaming export using xlsxwriter with constant_memory."""
+        report("Initializing fast Excel stream", 0, 1)
+        wb = xlsxwriter.Workbook(
+            save_path,
+            {
+                'constant_memory': True,
+                'default_date_format': 'yyyy-mm-dd',
+                'strings_to_numbers': False,
+            }
+        )
+
+        header_bg = '#' + self.config.get('header_fill', '1F4E78')
+        header_font_color = '#' + self.config.get('header_font_color', 'FFFFFF')
+        border_col = '#' + self.config.get('border_color', 'D9D9D9')
+
+        fmt_header = wb.add_format({
+            'bold': True,
+            'bg_color': header_bg,
+            'font_color': header_font_color,
+            'align': 'center',
+            'valign': 'vcenter',
+            'border': 1,
+            'border_color': border_col,
+        })
+        fmt_section_title = wb.add_format({
+            'bold': True,
+            'font_size': 12,
+        })
+        fmt_cell = wb.add_format({
+            'align': 'center',
+            'valign': 'vcenter',
+            'border': 1,
+            'border_color': border_col,
+        })
+        fmt_green = wb.add_format({'bg_color': '#' + self.config.get('green_fill', 'D6FFD6')})
+        fmt_red = wb.add_format({'bg_color': '#' + self.config.get('red_fill', 'FFD6D6')})
+
+        # ----------------------------------------------------------
+        # 1. Executive Summary
+        # ----------------------------------------------------------
+        report("Writing Executive Summary sheet", 0, 1)
+        ws_exec = wb.add_worksheet('Executive Summary')
+        kpi_cols = list(kpi_summary.columns)
+        ws_exec.write_row(0, 0, kpi_cols, fmt_header)
+        ws_exec.write_row(1, 0, [_sanitize_cell_value(v) for v in kpi_summary.iloc[0]], fmt_cell)
+
+        exec_r = 3
+        if not sales_summary_table.empty:
+            ws_exec.write(exec_r, 0, 'Sales Reconciliation Summary', fmt_section_title)
+            exec_r += 1
+            ws_exec.write_row(exec_r, 0, list(sales_summary_table.columns), fmt_header)
+            exec_r += 1
+            for row in sales_summary_table.itertuples(index=False, name=None):
+                ws_exec.write_row(exec_r, 0, [_sanitize_cell_value(v) for v in row], fmt_cell)
+                exec_r += 1
+            exec_r += 1
+
+        if not coll_summary_table.empty:
+            ws_exec.write(exec_r, 0, 'Collection Reconciliation Summary', fmt_section_title)
+            exec_r += 1
+            ws_exec.write_row(exec_r, 0, list(coll_summary_table.columns), fmt_header)
+            exec_r += 1
+            for row in coll_summary_table.itertuples(index=False, name=None):
+                ws_exec.write_row(exec_r, 0, [_sanitize_cell_value(v) for v in row], fmt_cell)
+                exec_r += 1
+
+        for c_idx, c_name in enumerate(kpi_cols):
+            ws_exec.set_column(c_idx, c_idx, max(len(str(c_name)) + 4, 15))
+
+        # ----------------------------------------------------------
+        # Helper: Stream data sheet
+        # ----------------------------------------------------------
+        def _stream_sheet(sheet_name: str, df: pd.DataFrame, apply_status_color: bool = True) -> None:
+            if df.empty:
+                return
+            report(f"Writing {sheet_name} sheet", 0, len(df))
+            ws = wb.add_worksheet(sheet_name)
+            ws.freeze_panes(1, 0)
+
+            cols = list(df.columns)
+            num_c = len(cols)
+            num_r = len(df)
+            ws.autofilter(0, 0, num_r, num_c - 1)
+            ws.write_row(0, 0, cols, fmt_header)
+
+            if apply_status_color and 'Overall_Status' in cols:
+                stat_idx = cols.index('Overall_Status')
+                stat_letter = get_column_letter(stat_idx + 1)
+                ws.conditional_format(
+                    1, 0, num_r, num_c - 1,
+                    {'type': 'formula', 'criteria': f'=${stat_letter}2="Matched"', 'format': fmt_green}
+                )
+                ws.conditional_format(
+                    1, 0, num_r, num_c - 1,
+                    {'type': 'formula', 'criteria': f'=AND(${stat_letter}2<>"", ${stat_letter}2<>"Matched")', 'format': fmt_red}
+                )
+
+            # Auto column widths: sample first 30 rows + header
+            sample = df.iloc[:30]
+            for c_i, c_n in enumerate(cols):
+                m_l = len(str(c_n))
+                for v in sample[c_n]:
+                    if v is not None and not pd.isna(v):
+                        l_v = len(str(v))
+                        if l_v > m_l:
+                            m_l = l_v
+                ws.set_column(c_i, c_i, min(max(m_l + 3, 12), 60))
+
+            chunk = 20000
+            for r_i, row in enumerate(df.itertuples(index=False, name=None), start=1):
+                clean = [
+                    None if (v is None or pd.isna(v))
+                    else (f"'{v}" if isinstance(v, str) and v.startswith(('=', '+', '-', '@')) else v)
+                    for v in row
+                ]
+                ws.write_row(r_i, 0, clean)
+                if r_i % chunk == 0:
+                    report(f"Writing {sheet_name}", r_i, num_r)
+
+            report(f"Writing {sheet_name}", num_r, num_r)
+
+        # ----------------------------------------------------------
+        # 2. Recon Detailed Results
+        # ----------------------------------------------------------
+        _stream_sheet('Recon Detailed Results', results_df, apply_status_color=True)
+
+        # ----------------------------------------------------------
+        # 3. Per-type sheets (Sales, Collection)
+        # ----------------------------------------------------------
+        if 'Recon_Type' in results_df.columns:
+            for recon_type, frame in results_df.groupby('Recon_Type', sort=False):
+                sheet_name = str(recon_type)[:31] or 'Results'
+                _stream_sheet(sheet_name, frame, apply_status_color=True)
+
+        # ----------------------------------------------------------
+        # 4. Raw sheets (only for <= 5000 rows)
+        # ----------------------------------------------------------
+        if len(results_df) <= 5000:
+            if not sales_sap_side_df.empty:
+                _stream_sheet('Sales - SAP Data', sales_sap_side_df, apply_status_color=False)
+            if not sales_db_side_df.empty:
+                _stream_sheet('Sales - DB Data', sales_db_side_df, apply_status_color=False)
+            if not coll_sap_side_df.empty:
+                _stream_sheet('Collection - SAP Data', coll_sap_side_df, apply_status_color=False)
+            if not coll_bank_side_df.empty:
+                _stream_sheet('Collection - Bank Data', coll_bank_side_df, apply_status_color=False)
+
+        wb.close()
+        report("Excel export complete", 1, 1)
+
 
 
 def save_styled_reconciliation_excel(
