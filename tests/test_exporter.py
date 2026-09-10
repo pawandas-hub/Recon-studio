@@ -292,4 +292,39 @@ def test_xlsxwriter_fast_engine(tmp_path):
     assert verification.passed, verification.errors
 
 
+def test_collection_export_all_sheets_and_explicit_raw_frames(tmp_path):
+    """Verify collection exports produce all 5 sheets with explicit raw dataframes and fallback."""
+    output_file = str(tmp_path / "collection_all_sheets.xlsx")
+    results_df = pd.DataFrame({
+        'Recon_Type': ['Collection', 'Collection'],
+        'Bank_Name': ['ICICI', 'SCB'],
+        'Bank_Account_Number': ['107505004792', '9988776655'],
+        'Bank_UTR': ['UTR-101', 'UTR-102'],
+        'Bank_Amount': [5000.0, 3000.0],
+        'SAP_Amount': [5000.0, 3000.0],
+        'Amount_Variance': [0.0, 0.0],
+        'Overall_Status': ['Matched', 'Matched'],
+        'Reconciliation_Remarks': ['MATCHED', 'MATCHED'],
+    })
+    raw_sap = pd.DataFrame({'SAP_Ref': ['S1', 'S2'], 'Amount': [5000.0, 3000.0]})
+    raw_bank = pd.DataFrame({'Bank_Ref': ['B1', 'B2'], 'Deposit': [5000.0, 3000.0]})
+
+    exporter = ExcelReportExporter()
+    exporter.export(
+        output_file,
+        results_df,
+        raw_collection_sap=raw_sap,
+        raw_collection_bank=raw_bank,
+    )
+
+    assert os.path.exists(output_file)
+    wb = openpyxl.load_workbook(output_file)
+    assert 'Executive Summary' in wb.sheetnames
+    assert 'Recon Detailed Results' in wb.sheetnames
+    assert 'Collection' in wb.sheetnames
+    assert 'Collection - SAP Data' in wb.sheetnames
+    assert 'Collection - Bank Data' in wb.sheetnames
+
+
+
 

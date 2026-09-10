@@ -25,8 +25,13 @@ class ExcelReportExporter:
 
     # Columns that belong to the SAP side of a Sales reconciliation
     _SAP_SIDE_COLS = [
-        'Business_Unit', 'InvoiceId', 'RefId_Ref1', 'Ref2_Invoice_No', 'Reference',
-        'Posting_Date', 'Total_CD_LC', 'SAP_Freight_Amount', 'SAP_GRN_ID', 'SAP_Offset_Account',
+        'Assignment', 'Document_Number', 'Reference', 'Doc_Header_Text', 'Posting_Date',
+        'Document_Date', 'Profit_Center', 'Total_CD_LC', 'Amount_in_Doc_Curr',
+        'Sales_Organization', 'Distribution_Channel', 'Division', 'Customer_Code',
+        'Customer_Name', 'City', 'Region', 'Material_Number', 'Material_Description',
+        'Billing_Quantity', 'Billing_Unit', 'Net_Value', 'Tax_Amount', 'Document_Currency',
+        'Business_Unit', 'InvoiceId', 'RefId_Ref1', 'Ref2_Invoice_No',
+        'SAP_Freight_Amount', 'SAP_GRN_ID', 'SAP_Offset_Account',
         'Mapped_SAP_Code', 'Format_Used',
     ]
     # Columns that belong to the DB side of a Sales reconciliation
@@ -35,6 +40,16 @@ class ExcelReportExporter:
         'Sales_DocDate', 'Total_Sales_Value', 'DB_Freight_Amount', 'Freight_Variance', 'DB_GRN_ID',
         'Customer_Id', 'Retailer_Customer_Id',
         'COGSCostingCode', 'Format_Used',
+    ]
+    # Columns that belong to the SAP side of a Collection reconciliation
+    _COLL_SAP_SIDE_COLS = [
+        'SAP_Doc_Number', 'SAP_Posting_Date', 'SAP_Amount', 'SAP_Offset_Account',
+        'Bank_UTR', 'Origin_No', 'Details', 'C/D (LC)', 'Offset Account',
+    ]
+    # Columns that belong to the Bank side of a Collection reconciliation
+    _COLL_BANK_SIDE_COLS = [
+        'Bank_Name', 'Bank_Account_Number', 'Bank_UTR', 'Bank_Date', 'Bank_Amount',
+        'Bank_Description', 'Transaction ID', 'TransactionID', 'PNBTransactionID', 'Deposit Amt (INR)',
     ]
 
     def __init__(self, style_config: Optional[dict] = None):
@@ -173,7 +188,31 @@ class ExcelReportExporter:
         """Return (sap_df, db_df) containing only the relevant columns."""
         sap_cols = [c for c in ExcelReportExporter._SAP_SIDE_COLS if c in sales_df.columns]
         db_cols = [c for c in ExcelReportExporter._DB_SIDE_COLS if c in sales_df.columns]
-        return sales_df[sap_cols].copy(), sales_df[db_cols].copy()
+        if not sap_cols and not sales_df.empty:
+            sap_cols = [c for c in sales_df.columns if c not in ExcelReportExporter._DB_SIDE_COLS]
+        if not db_cols and not sales_df.empty:
+            db_cols = [c for c in sales_df.columns if c not in ExcelReportExporter._SAP_SIDE_COLS]
+        return (
+            sales_df[sap_cols].copy() if sap_cols else sales_df.copy(),
+            sales_df[db_cols].copy() if db_cols else sales_df.copy(),
+        )
+
+    # ------------------------------------------------------------------
+    # Split Collection data into SAP-side and Bank-side DataFrames
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _split_collection_sides(coll_df: pd.DataFrame):
+        """Return (sap_df, bank_df) containing relevant columns."""
+        sap_cols = [c for c in ExcelReportExporter._COLL_SAP_SIDE_COLS if c in coll_df.columns]
+        bank_cols = [c for c in ExcelReportExporter._COLL_BANK_SIDE_COLS if c in coll_df.columns]
+        if not sap_cols and not coll_df.empty:
+            sap_cols = [c for c in coll_df.columns if c not in ExcelReportExporter._COLL_BANK_SIDE_COLS]
+        if not bank_cols and not coll_df.empty:
+            bank_cols = [c for c in coll_df.columns if c not in ExcelReportExporter._COLL_SAP_SIDE_COLS]
+        return (
+            coll_df[sap_cols].copy() if sap_cols else coll_df.copy(),
+            coll_df[bank_cols].copy() if bank_cols else coll_df.copy(),
+        )
 
     def export(
         self,
@@ -363,11 +402,15 @@ class ExcelReportExporter:
 
         if raw_sap_c is not None and isinstance(raw_sap_c, pd.DataFrame) and not raw_sap_c.empty:
             coll_sap_side_df = raw_sap_c.copy()
+        elif not coll_df.empty:
+            coll_sap_side_df, _ = self._split_collection_sides(coll_df)
         else:
             coll_sap_side_df = pd.DataFrame()
 
         if raw_bank_c is not None and isinstance(raw_bank_c, pd.DataFrame) and not raw_bank_c.empty:
             coll_bank_side_df = raw_bank_c.copy()
+        elif not coll_df.empty:
+            _, coll_bank_side_df = self._split_collection_sides(coll_df)
         else:
             coll_bank_side_df = pd.DataFrame()
 

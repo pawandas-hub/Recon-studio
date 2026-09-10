@@ -68,6 +68,16 @@ if "excel_cached_bytes" not in st.session_state:
     st.session_state.excel_cached_bytes = None
 if "excel_cached_id" not in st.session_state:
     st.session_state.excel_cached_id = None
+if "raw_sales_sap" not in st.session_state:
+    st.session_state.raw_sales_sap = None
+if "raw_sales_db" not in st.session_state:
+    st.session_state.raw_sales_db = None
+if "raw_collection_sap" not in st.session_state:
+    st.session_state.raw_collection_sap = None
+if "raw_collection_bank" not in st.session_state:
+    st.session_state.raw_collection_bank = None
+if "recon_run_id" not in st.session_state:
+    st.session_state.recon_run_id = None
 
 
 # ---------------------------------------------------------------------------
@@ -755,6 +765,11 @@ if st.session_state.active_view == "Reconciliation":
                     )
                     elapsed = time.monotonic() - t_start
                     st.session_state.results_df = res
+                    st.session_state.raw_sales_sap = getattr(res, "attrs", {}).get("raw_sales_sap")
+                    st.session_state.raw_sales_db = getattr(res, "attrs", {}).get("raw_sales_db")
+                    st.session_state.raw_collection_sap = getattr(res, "attrs", {}).get("raw_collection_sap")
+                    st.session_state.raw_collection_bank = getattr(res, "attrs", {}).get("raw_collection_bank")
+                    st.session_state.recon_run_id = f"{int(time.time())}"
                     st.session_state.excel_cached_bytes = None
                     st.session_state.excel_cached_id = None
                     st.session_state.elapsed_sec = elapsed
@@ -882,12 +897,17 @@ if st.session_state.active_view == "Reconciliation":
                 st.caption(f"Showing {total_view_count:,} records")
 
             # Download Buttons
-            d_c1, d_c2, _ = st.columns([2.0, 1.8, 2.2])
-            dataset_key = len(results_df)
+            dataset_key = f"{len(results_df)}_v6_{st.session_state.get('recon_run_id', '')}"
             has_cached_excel = (
                 st.session_state.get("excel_cached_id") == dataset_key
                 and st.session_state.get("excel_cached_bytes") is not None
             )
+
+            if has_cached_excel:
+                d_c1, d_c2, d_c3 = st.columns([2.2, 1.3, 1.8])
+            else:
+                d_c1, d_c3 = st.columns([2.2, 1.8])
+                d_c2 = None
 
             with d_c1:
                 if has_cached_excel:
@@ -907,7 +927,27 @@ if st.session_state.active_view == "Reconciliation":
                             tmp_path = tmp.name
                             tmp.close()
                             try:
-                                exporter.export(tmp_path, results_df)
+                                raw_s_sap = st.session_state.get("raw_sales_sap")
+                                if raw_s_sap is None and hasattr(results_df, "attrs"):
+                                    raw_s_sap = results_df.attrs.get("raw_sales_sap")
+                                raw_s_db = st.session_state.get("raw_sales_db")
+                                if raw_s_db is None and hasattr(results_df, "attrs"):
+                                    raw_s_db = results_df.attrs.get("raw_sales_db")
+                                raw_c_sap = st.session_state.get("raw_collection_sap")
+                                if raw_c_sap is None and hasattr(results_df, "attrs"):
+                                    raw_c_sap = results_df.attrs.get("raw_collection_sap")
+                                raw_c_bank = st.session_state.get("raw_collection_bank")
+                                if raw_c_bank is None and hasattr(results_df, "attrs"):
+                                    raw_c_bank = results_df.attrs.get("raw_collection_bank")
+
+                                exporter.export(
+                                    tmp_path,
+                                    results_df,
+                                    raw_sales_sap=raw_s_sap,
+                                    raw_sales_db=raw_s_db,
+                                    raw_collection_sap=raw_c_sap,
+                                    raw_collection_bank=raw_c_bank,
+                                )
                                 with open(tmp_path, "rb") as f:
                                     xl_bytes = f.read()
                                 st.session_state.excel_cached_bytes = xl_bytes
@@ -921,7 +961,14 @@ if st.session_state.active_view == "Reconciliation":
                                 except OSError:
                                     pass
 
-            with d_c2:
+            if d_c2 is not None:
+                with d_c2:
+                    if st.button("🔄 Re-generate", key="btn_regen_excel_recon", help="Force regenerate all sheets"):
+                        st.session_state.excel_cached_bytes = None
+                        st.session_state.excel_cached_id = None
+                        st.rerun()
+
+            with d_c3:
                 st.download_button(
                     f"📄  Export CSV ({len(results_df):,} rows - Instant)",
                     data=results_df.to_csv(index=False).encode("utf-8"),
@@ -996,20 +1043,28 @@ elif st.session_state.active_view == "Reports":
             st.markdown("### 🏦 Collection Breakdown by Bank")
             st.dataframe(coll_summary, use_container_width=True)
 
-        dataset_key = len(results_df)
+        dataset_key = f"{len(results_df)}_v6_{st.session_state.get('recon_run_id', '')}"
         has_cached_rep = (
             st.session_state.get("excel_cached_id") == dataset_key
             and st.session_state.get("excel_cached_bytes") is not None
         )
+
         if has_cached_rep:
-            st.download_button(
-                f"📥  Download Executive Report Workbook (.xlsx - {len(results_df):,} rows)",
-                data=st.session_state.excel_cached_bytes,
-                file_name="Executive_Reconciliation_Report.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                type="primary",
-                key="btn_download_exec_report_ready",
-            )
+            rc1, rc2 = st.columns([2.5, 1.2])
+            with rc1:
+                st.download_button(
+                    f"📥  Download Executive Report Workbook (.xlsx - {len(results_df):,} rows)",
+                    data=st.session_state.excel_cached_bytes,
+                    file_name="Executive_Reconciliation_Report.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    type="primary",
+                    key="btn_download_exec_report_ready",
+                )
+            with rc2:
+                if st.button("🔄 Re-generate Workbook", key="btn_regen_excel_reports", help="Force rebuild workbook"):
+                    st.session_state.excel_cached_bytes = None
+                    st.session_state.excel_cached_id = None
+                    st.rerun()
         else:
             if st.button("📊  Generate Executive Report Workbook (.xlsx)", type="primary", key="btn_prep_exec_report"):
                 with st.spinner(f"⏳ Fast-generating Executive Report for {len(results_df):,} records... Please wait a few seconds..."):
@@ -1018,7 +1073,27 @@ elif st.session_state.active_view == "Reports":
                     tmp_path = tmp.name
                     tmp.close()
                     try:
-                        exporter.export(tmp_path, results_df)
+                        raw_s_sap = st.session_state.get("raw_sales_sap")
+                        if raw_s_sap is None and hasattr(results_df, "attrs"):
+                            raw_s_sap = results_df.attrs.get("raw_sales_sap")
+                        raw_s_db = st.session_state.get("raw_sales_db")
+                        if raw_s_db is None and hasattr(results_df, "attrs"):
+                            raw_s_db = results_df.attrs.get("raw_sales_db")
+                        raw_c_sap = st.session_state.get("raw_collection_sap")
+                        if raw_c_sap is None and hasattr(results_df, "attrs"):
+                            raw_c_sap = results_df.attrs.get("raw_collection_sap")
+                        raw_c_bank = st.session_state.get("raw_collection_bank")
+                        if raw_c_bank is None and hasattr(results_df, "attrs"):
+                            raw_c_bank = results_df.attrs.get("raw_collection_bank")
+
+                        exporter.export(
+                            tmp_path,
+                            results_df,
+                            raw_sales_sap=raw_s_sap,
+                            raw_sales_db=raw_s_db,
+                            raw_collection_sap=raw_c_sap,
+                            raw_collection_bank=raw_c_bank,
+                        )
                         with open(tmp_path, "rb") as f:
                             xl_bytes = f.read()
                         st.session_state.excel_cached_bytes = xl_bytes

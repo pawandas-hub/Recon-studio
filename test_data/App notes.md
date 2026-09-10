@@ -1,3 +1,20 @@
+1. ekhon ja  ja format cholche sales er jonno sob formate sales hole credit note o thake abong tai ami age theke already extract file e excutive sheet e cn bole ekta option diyechi. tai je bu er je je cn thakbe tar tar total amount ar diffarencr okhane bosate hobe 
+2. formate 1 er jonno db cn datar order_id main jar sqathe tomake sqap ledger er ref.2 theke i'd match korte hobe. Tarpor tomake 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 1. amar ei recon system e aro kichu notun dhoroner sale and collection data add korbo jar sheet e column name alada alada hobe 
 2. ei notun dhoroner recon er jonno DB te tomar jonno InvoiceId column ta main thakbe are sap ledger er khetre ref.2 theke AFC chara invoice id nite hobe 
 3. tarpor tomake db er invoice er sathe GRNID column ar sap ledger er Ref. 2 invoice er sathe Ref. 1 column er GRN id match korte hobe 
@@ -7,19 +24,6 @@
 7.tapor tomake DB invoice id er against e Freight amount match korte hobe, jeta tumi sap ledger 4020101013 er modhe Ref. 2 invoice id er against e Deb./Cred. (LC) column theke total amount niye
 
 *inportent- ei sob kichu add korte giye jeno purono kono recon niyom change na hoye jay*
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 1. amar main gui app e reports er niche ekta button chai jeta click na korle notun kichu implement korle seta update hobe na streamlit online recon link e jotokhon na porjonto ami oi button ta click na kori 
