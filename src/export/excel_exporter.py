@@ -274,12 +274,13 @@ class ExcelReportExporter:
                     if row_num % max(total_rows // 10, 1) == 0:
                         report(f"Styling {sheet_label}", row_num, total_rows)
 
-            # Fast auto column widths (sample up to 300 rows on large tables)
-            sample_limit = min(ws.max_row, 300) if total_rows > 3000 else ws.max_row
+            # Fast auto column widths (sample up to 25 rows on large tables)
+            sample_limit = min(ws.max_row, 25 if total_rows > 3000 else ws.max_row)
             for col_idx in range(1, ws.max_column + 1):
                 col_letter = get_column_letter(col_idx)
-                max_len = 10
-                for r in range(1, sample_limit + 1):
+                header_val = str(ws.cell(row=1, column=col_idx).value or '')
+                max_len = max(len(header_val), 10)
+                for r in range(2, sample_limit + 1):
                     val_str = str(ws.cell(row=r, column=col_idx).value or '')
                     if len(val_str) > max_len:
                         max_len = len(val_str)
@@ -371,28 +372,28 @@ class ExcelReportExporter:
             report("Writing Recon Detailed Results sheet", 0, 1)
             results_df.to_excel(writer, sheet_name='Recon Detailed Results', index=False)
 
-            # Per-type sheets (Sales / Collection)
-            if 'Recon_Type' in results_df.columns:
+            # Per-type sheets (Sales / Collection) — only if multiple types exist
+            if 'Recon_Type' in results_df.columns and results_df['Recon_Type'].nunique() > 1:
                 for recon_type, frame in results_df.groupby('Recon_Type', sort=False):
                     sheet_name = str(recon_type)[:31] or 'Results'
                     report(f"Writing {sheet_name} sheet", 0, 1)
                     frame.to_excel(writer, sheet_name=sheet_name, index=False)
 
-            # Sales - SAP Data and Sales - DB Data sheets
-            if not sales_sap_side_df.empty:
-                report("Writing Sales - SAP Data sheet", 0, 1)
-                sales_sap_side_df.to_excel(writer, sheet_name='Sales - SAP Data', index=False)
-            if not sales_db_side_df.empty:
-                report("Writing Sales - DB Data sheet", 0, 1)
-                sales_db_side_df.to_excel(writer, sheet_name='Sales - DB Data', index=False)
-
-            # Collection - SAP Data and Collection - Bank Data sheets
-            if not coll_sap_side_df.empty:
-                report("Writing Collection - SAP Data sheet", 0, 1)
-                coll_sap_side_df.to_excel(writer, sheet_name='Collection - SAP Data', index=False)
-            if not coll_bank_side_df.empty:
-                report("Writing Collection - Bank Data sheet", 0, 1)
-                coll_bank_side_df.to_excel(writer, sheet_name='Collection - Bank Data', index=False)
+            # Raw data sheets: only include for smaller datasets (<= 5,000 rows)
+            # Recon Detailed Results already contains all raw + recon columns together.
+            if len(results_df) <= 5000:
+                if not sales_sap_side_df.empty:
+                    report("Writing Sales - SAP Data sheet", 0, 1)
+                    sales_sap_side_df.to_excel(writer, sheet_name='Sales - SAP Data', index=False)
+                if not sales_db_side_df.empty:
+                    report("Writing Sales - DB Data sheet", 0, 1)
+                    sales_db_side_df.to_excel(writer, sheet_name='Sales - DB Data', index=False)
+                if not coll_sap_side_df.empty:
+                    report("Writing Collection - SAP Data sheet", 0, 1)
+                    coll_sap_side_df.to_excel(writer, sheet_name='Collection - SAP Data', index=False)
+                if not coll_bank_side_df.empty:
+                    report("Writing Collection - Bank Data sheet", 0, 1)
+                    coll_bank_side_df.to_excel(writer, sheet_name='Collection - Bank Data', index=False)
 
             wb = writer.book
 

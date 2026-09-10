@@ -64,6 +64,11 @@ if "ingested_files_log" not in st.session_state:
     st.session_state.ingested_files_log = []
 if "elapsed_sec" not in st.session_state:
     st.session_state.elapsed_sec = 0.0
+if "excel_cached_bytes" not in st.session_state:
+    st.session_state.excel_cached_bytes = None
+if "excel_cached_id" not in st.session_state:
+    st.session_state.excel_cached_id = None
+
 
 # ---------------------------------------------------------------------------
 # Helper: Load Base64 Logos
@@ -368,20 +373,31 @@ def show_kpi_modal(modal_type: str):
 
     df_show = filtered_df.copy()
     if modal_search:
-        mask = df_show.apply(lambda r: modal_search.lower() in " ".join(str(v) for v in r.values).lower(), axis=1)
+        s_low = modal_search.strip().lower()
+        search_cols = [c for c in ["Reference", "InvoiceId", "RefId_Ref1", "Ref2_Invoice_No", "Business_Unit", "Overall_Status", "Bank_UTR", "Customer_Id"] if c in df_show.columns]
+        if search_cols:
+            mask = df_show[search_cols].astype(str).apply(lambda col: col.str.lower().str.contains(s_low, na=False)).any(axis=1)
+        else:
+            mask = df_show.astype(str).apply(lambda col: col.str.lower().str.contains(s_low, na=False)).any(axis=1)
         df_show = df_show[mask]
 
-    st.caption(f"Showing {len(df_show):,} of {len(filtered_df):,} rows")
-    st.dataframe(df_show, use_container_width=True, height=360)
+    limit = 1000
+    if len(df_show) > limit:
+        st.caption(f"Showing first {limit:,} of {len(df_show):,} rows (Export CSV below for all {len(df_show):,} rows)")
+        st.dataframe(df_show.head(limit), use_container_width=True, height=360)
+    else:
+        st.caption(f"Showing {len(df_show):,} of {len(filtered_df):,} rows")
+        st.dataframe(df_show, use_container_width=True, height=360)
 
-    # Export Button inside modal
+    # Export Button inside modal (instant CSV export of all filtered rows)
     csv_bytes = df_show.to_csv(index=False).encode("utf-8")
     st.download_button(
-        "⬇  Export Filtered View (CSV)",
+        f"⬇  Export Filtered View (CSV - {len(df_show):,} records)",
         data=csv_bytes,
         file_name=f"Recon_View_{modal_type}.csv",
         mime="text/csv",
         type="primary",
+        key=f"btn_modal_export_{modal_type}",
     )
 
 # ---------------------------------------------------------------------------
@@ -654,6 +670,8 @@ if st.session_state.active_view == "Reconciliation":
                     )
                     elapsed = time.monotonic() - t_start
                     st.session_state.results_df = res
+                    st.session_state.excel_cached_bytes = None
+                    st.session_state.excel_cached_id = None
                     st.session_state.elapsed_sec = elapsed
 
                     # Record run in history (safe column access)
@@ -707,14 +725,23 @@ if st.session_state.active_view == "Reconciliation":
             elif tbl_tab == "Collection" and "Recon_Type" in df_view.columns:
                 df_view = df_view[df_view["Recon_Type"] == "Collection"]
 
-            # Search Filter
+            # Search Filter (fast vector filter on key columns)
             if search_txt:
-                mask = df_view.apply(lambda r: search_txt.lower() in " ".join(str(x) for x in r.values).lower(), axis=1)
+                s_low = search_txt.strip().lower()
+                search_cols = [c for c in ["Reference", "InvoiceId", "RefId_Ref1", "Ref2_Invoice_No", "Business_Unit", "Overall_Status", "Bank_UTR", "Customer_Id"] if c in df_view.columns]
+                if search_cols:
+                    mask = df_view[search_cols].astype(str).apply(lambda col: col.str.lower().str.contains(s_low, na=False)).any(axis=1)
+                else:
+                    mask = df_view.astype(str).apply(lambda col: col.str.lower().str.contains(s_low, na=False)).any(axis=1)
                 df_view = df_view[mask]
 
-            # Table records formatting
+            total_view_count = len(df_view)
+            MAX_VIEW_ROWS = 1000
+            df_preview = df_view.head(MAX_VIEW_ROWS)
+
+            # Fast Table records formatting — ONLY format the preview subset (instantaneous!)
             records = []
-            for _, row in df_view.iterrows():
+            for _, row in df_preview.iterrows():
                 rtype = row.get("Recon_Type", "Sales")
                 if rtype == "Sales":
                     ref = _first_valid(row.get("InvoiceId"), row.get("RefId_Ref1"), row.get("Ref2_Invoice_No"), row.get("Reference"))
@@ -757,7 +784,6 @@ if st.session_state.active_view == "Reconciliation":
                     return f"color: {T_AMBER}; font-weight: 700;"
                 return ""
 
-            # Bug 13: Styler.map added in pandas 2.1 — fallback to applymap for older versions
             styler = df_final.style
             styled_t = (
                 styler.map(style_status, subset=["Status"])
@@ -765,46 +791,64 @@ if st.session_state.active_view == "Reconciliation":
                 else styler.applymap(style_status, subset=["Status"])
             )
             st.dataframe(styled_t, use_container_width=True, height=440)
+            if total_view_count > MAX_VIEW_ROWS:
+                st.caption(f"Showing first {MAX_VIEW_ROWS:,} of {total_view_count:,} records — filter or export below for full dataset.")
+            else:
+                st.caption(f"Showing {total_view_count:,} records")
 
             # Download Buttons
-            d_c1, d_c2, _ = st.columns([1.5, 1.5, 3])
+            d_c1, d_c2, _ = st.columns([2.0, 1.8, 2.2])
+            dataset_key = len(results_df)
+            has_cached_excel = (
+                st.session_state.get("excel_cached_id") == dataset_key
+                and st.session_state.get("excel_cached_bytes") is not None
+            )
+
             with d_c1:
-                exporter = ExcelReportExporter()
-                tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
-                tmp_path = tmp.name
-                tmp.close()
-                xl_bytes = b""  # Bug 14: default to prevent UnboundLocalError if export fails
-                try:
-                    exporter.export(tmp_path, results_df)
-                    with open(tmp_path, "rb") as f:
-                        xl_bytes = f.read()
-                finally:
-                    try:
-                        os.unlink(tmp_path)
-                    except OSError:
-                        pass
-                if xl_bytes:
+                if has_cached_excel:
                     st.download_button(
-                        "📊  Export Excel Report",
-                        data=xl_bytes,
+                        f"⬇️  Download Excel Report ({len(results_df):,} rows)",
+                        data=st.session_state.excel_cached_bytes,
                         file_name="Reconciliation_Summary_Report.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         type="primary",
-                        key="btn_export_excel_summary",
+                        key="btn_download_excel_ready",
                     )
                 else:
-                    st.warning("⚠️ Excel export failed. Try again.")
+                    if st.button("📊  Generate Excel Report (.xlsx)", type="primary", key="btn_prep_excel"):
+                        with st.spinner(f"⏳ Generating styled Excel report for {len(results_df):,} records... Please wait a moment..."):
+                            exporter = ExcelReportExporter()
+                            tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+                            tmp_path = tmp.name
+                            tmp.close()
+                            try:
+                                exporter.export(tmp_path, results_df)
+                                with open(tmp_path, "rb") as f:
+                                    xl_bytes = f.read()
+                                st.session_state.excel_cached_bytes = xl_bytes
+                                st.session_state.excel_cached_id = dataset_key
+                                st.rerun()
+                            except Exception as ex:
+                                st.error(f"Excel export error: {str(ex)}")
+                            finally:
+                                try:
+                                    os.unlink(tmp_path)
+                                except OSError:
+                                    pass
+
             with d_c2:
                 st.download_button(
-                    "📄  Export CSV",
+                    f"📄  Export CSV ({len(results_df):,} rows - Instant)",
                     data=results_df.to_csv(index=False).encode("utf-8"),
                     file_name="Reconciliation_Results.csv",
                     mime="text/csv",
+                    key="btn_export_csv_instant",
                 )
         else:
             empty_cols = ["Source", "Reference", "Business Unit", "SAP Posting", "SAP Amount", "Book Amount", "Variance", "Status"]
             st.dataframe(pd.DataFrame(columns=empty_cols), use_container_width=True, height=280)
             st.caption("No records to display. Drop files above and click 'Run Reconciliation'.")
+
 
 
 # ---------------------------------------------------------------------------
@@ -867,24 +911,41 @@ elif st.session_state.active_view == "Reports":
             st.markdown("### 🏦 Collection Breakdown by Bank")
             st.dataframe(coll_summary, use_container_width=True)
 
-        tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
-        tmp_path = tmp.name
-        tmp.close()
-        try:
-            exporter.export(tmp_path, results_df)
-            with open(tmp_path, "rb") as f:
-                xl_bytes = f.read()
-        finally:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-        st.download_button(
-            "📥  Download Executive Report Workbook (.xlsx)",
-            data=xl_bytes,
-            file_name="Executive_Reconciliation_Report.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            type="primary",
+        dataset_key = len(results_df)
+        has_cached_rep = (
+            st.session_state.get("excel_cached_id") == dataset_key
+            and st.session_state.get("excel_cached_bytes") is not None
         )
+        if has_cached_rep:
+            st.download_button(
+                f"📥  Download Executive Report Workbook (.xlsx - {len(results_df):,} rows)",
+                data=st.session_state.excel_cached_bytes,
+                file_name="Executive_Reconciliation_Report.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                type="primary",
+                key="btn_download_exec_report_ready",
+            )
+        else:
+            if st.button("📊  Generate Executive Report Workbook (.xlsx)", type="primary", key="btn_prep_exec_report"):
+                with st.spinner(f"⏳ Generating Executive Report for {len(results_df):,} records... Please wait a moment..."):
+                    exporter = ExcelReportExporter()
+                    tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+                    tmp_path = tmp.name
+                    tmp.close()
+                    try:
+                        exporter.export(tmp_path, results_df)
+                        with open(tmp_path, "rb") as f:
+                            xl_bytes = f.read()
+                        st.session_state.excel_cached_bytes = xl_bytes
+                        st.session_state.excel_cached_id = dataset_key
+                        st.rerun()
+                    except Exception as ex:
+                        st.error(f"Report generation error: {str(ex)}")
+                    finally:
+                        try:
+                            os.unlink(tmp_path)
+                        except OSError:
+                            pass
     else:
         st.info("Perform a reconciliation to view and download executive summary reports.")
+
