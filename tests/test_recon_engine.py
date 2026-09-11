@@ -214,4 +214,35 @@ def test_read_file_tables_deduplicates_duplicate_columns(tmp_path):
     assert len(res) == 2
 
 
+def test_format4_reconciliation_and_detection():
+    """Verify that Format 4 files (which contain so_id as well as GRNID) are detected as Format 4 and reconciled properly."""
+    from src.core.detector import detect_format
+
+    df_bu = pd.DataFrame({
+        'Ref. 2': ['1001', '1002'],
+        'Posting Date': ['2026-08-01', '2026-08-02'],
+        'C/D (LC)': [5000.0, 8000.0],
+        'Offset Account': ['OM12345', 'OM67890'],
+        'Business Unit': ['BU_14', 'BU_14'],
+    })
+    df_db = pd.DataFrame({
+        'so_id': ['1001', '1002', '1003'],
+        'GRNID': ['GRN1', 'GRN2', 'GRN3'],  # Has GRNID, but should still detect as format4 because of so_id!
+        'DocDate': ['2026-08-01', '2026-08-02', '2026-08-03'],
+        'TaxableAmount': [5000.0, 7500.0, 3000.0],
+        'SAP_ID': ['12345', '67890', '99999'],
+        'BU': ['BU_14', 'BU_14', 'BU_14'],
+    })
+
+    fmt = detect_format(df_bu, df_db)
+    assert fmt == "format4", f"Expected format4, got {fmt}"
+
+    results = reconcile_dataframes(df_bu, df_db)
+    assert len(results) == 3
+    assert results.loc[results['SO_ID'] == '1001', 'Overall_Status'].values[0] == 'Matched'
+    assert results.loc[results['SO_ID'] == '1002', 'Overall_Status'].values[0] == 'Not Matched'
+    assert results.loc[results['SO_ID'] == '1003', 'Overall_Status'].values[0] == 'Not Matched'
+
+
+
 

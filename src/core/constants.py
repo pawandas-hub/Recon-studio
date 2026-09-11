@@ -77,7 +77,7 @@ FORMAT4_DB_COLS = {
     'date': ['DocDate', 'Doc Date', 'Doc_Date', 'Date', 'Posting Date'],
     'taxable': ['TaxableAmount', 'Taxable Amount', 'TAXABLEAMOUNT', 'Taxable_Amount', 'Amount'],
     'sap_id': ['SAP_ID', 'SAPID', 'SAP ID', 'Sap_Id', 'SapId', 'SAP_Code'],
-    'unit': ['Business Unit', 'BU', 'Branch', 'Unit', 'COGSCostingCode']
+    'unit': ['COGSCostingCode', 'SO_Project', 'Business Unit', 'BU', 'Branch', 'Unit']
 }
 
 # Credit Note (CN) Column Candidates per format

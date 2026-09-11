@@ -469,7 +469,7 @@ def show_kpi_modal(modal_type: str):
     df_show = filtered_df.copy()
     if modal_search:
         s_low = modal_search.strip().lower()
-        search_cols = [c for c in ["Reference", "InvoiceId", "RefId_Ref1", "Ref2_Invoice_No", "Business_Unit", "Overall_Status", "Bank_UTR", "Customer_Id"] if c in df_show.columns]
+        search_cols = [c for c in ["Reference", "InvoiceId", "RefId_Ref1", "Ref2_Invoice_No", "SO_ID", "CN_Reference", "Business_Unit", "Overall_Status", "Bank_UTR", "Customer_Id", "DB_SAP_ID", "SAP_Offset_Account"] if c in df_show.columns]
         if search_cols:
             mask = df_show[search_cols].astype(str).apply(lambda col: col.str.lower().str.contains(s_low, na=False)).any(axis=1)
         else:
@@ -828,7 +828,7 @@ if st.session_state.active_view == "Reconciliation":
             # Search Filter (fast vector filter on key columns)
             if search_txt:
                 s_low = search_txt.strip().lower()
-                search_cols = [c for c in ["Reference", "InvoiceId", "RefId_Ref1", "Ref2_Invoice_No", "Business_Unit", "Overall_Status", "Bank_UTR", "Customer_Id"] if c in df_view.columns]
+                search_cols = [c for c in ["Reference", "InvoiceId", "RefId_Ref1", "Ref2_Invoice_No", "SO_ID", "CN_Reference", "Business_Unit", "Overall_Status", "Bank_UTR", "Customer_Id", "DB_SAP_ID", "SAP_Offset_Account"] if c in df_view.columns]
                 if search_cols:
                     mask = df_view[search_cols].astype(str).apply(lambda col: col.str.lower().str.contains(s_low, na=False)).any(axis=1)
                 else:
@@ -844,7 +844,7 @@ if st.session_state.active_view == "Reconciliation":
             for _, row in df_preview.iterrows():
                 rtype = row.get("Recon_Type", "Sales")
                 if rtype == "Sales":
-                    ref = _first_valid(row.get("InvoiceId"), row.get("RefId_Ref1"), row.get("Ref2_Invoice_No"), row.get("Reference"))
+                    ref = _first_valid(row.get("SO_ID"), row.get("CN_Reference"), row.get("InvoiceId"), row.get("RefId_Ref1"), row.get("Ref2_Invoice_No"), row.get("Reference"))
                     bu = _first_valid(row.get("Business_Unit"))
                     posting = str(_first_valid(row.get("Posting_Date")))
                     sap_amt = _fmt_inr(row.get("Total_CD_LC", 0))

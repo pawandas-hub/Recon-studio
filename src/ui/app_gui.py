@@ -1959,7 +1959,7 @@ class ReconApp(tk.Tk):
         is_sales = recon_type == "Sales"
 
         sales_ref = pd.Series("", index=df.index, dtype=str)
-        for col in ("Reference", "RefId_Ref1", "Ref2_Invoice_No", "InvoiceId"):
+        for col in ("Reference", "RefId_Ref1", "Ref2_Invoice_No", "InvoiceId", "SO_ID", "CN_Reference"):
             if col in df.columns:
                 val = df[col].fillna("").astype(str)
                 mask = val.str.strip() != ""

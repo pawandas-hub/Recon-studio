@@ -31,13 +31,14 @@ class ExcelReportExporter:
         'Sales_Organization', 'Distribution_Channel', 'Division', 'Customer_Code',
         'Customer_Name', 'City', 'Region', 'Material_Number', 'Material_Description',
         'Billing_Quantity', 'Billing_Unit', 'Net_Value', 'Tax_Amount', 'Document_Currency',
-        'Business_Unit', 'InvoiceId', 'RefId_Ref1', 'Ref2_Invoice_No',
+        'Business_Unit', 'InvoiceId', 'RefId_Ref1', 'Ref2_Invoice_No', 'SO_ID', 'CN_Reference',
         'SAP_Freight_Amount', 'SAP_GRN_ID', 'SAP_Offset_Account',
         'Mapped_SAP_Code', 'Format_Used',
     ]
     # Columns that belong to the DB side of a Sales reconciliation
     _DB_SIDE_COLS = [
         'Business_Unit', 'InvoiceId', 'RefId_Ref1', 'Ref2_Invoice_No', 'Reference',
+        'SO_ID', 'CN_Reference', 'DB_SAP_ID',
         'Sales_DocDate', 'Total_Sales_Value', 'DB_Freight_Amount', 'Freight_Variance', 'DB_GRN_ID',
         'Customer_Id', 'Retailer_Customer_Id',
         'COGSCostingCode', 'Format_Used',

@@ -97,17 +97,23 @@ def is_bank_table(df: pd.DataFrame) -> bool:
     return (has_transaction and has_amount and has_date) or (has_description and has_amount)
 
 def detect_format(df_bu: pd.DataFrame, df_db: pd.DataFrame, mode: str = "Auto") -> str:
-    """Detects reconciliation mode: 'format1' (Ref 1), 'format2' (Retailer Ref 2), or 'format3' (AFC / Freight & GRN)."""
+    """Detects reconciliation mode: 'format1' (Ref 1), 'format2' (Retailer Ref 2), 'format3' (AFC / Freight & GRN), or 'format4' (SO_ID / Sales with SAP_ID)."""
     if mode == "Format 1 (Legacy / Ref. 1 vs DB)":
         return "format1"
     if mode == "Format 2 (Retailer / Ref. 2 vs Invoice No)":
         return "format2"
     if mode in ("Format 3 (AFC / Sales with Freight & GRN)", "format3") or str(mode).startswith("Format 3"):
         return "format3"
-    
+    if mode in ("Format 4 (SO_ID / Sales with SAP_ID)", "format4") or str(mode).startswith("Format 4"):
+        return "format4"
 
     bu_cols_clean = [re.sub(r'[\s_\-\(\)\/\.]+', '', str(c).lower()) for c in df_bu.columns]
     db_cols_clean = [re.sub(r'[\s_\-\(\)\/\.]+', '', str(c).lower()) for c in df_db.columns]
+
+    # Format 4 signatures: DB has so_id (Sales Order ID is unique to Format 4)
+    # Check this BEFORE Format 3 because Format 4 tables may also contain a GRNID column!
+    if 'soid' in db_cols_clean:
+        return "format4"
 
     # Format 3 signatures:
     # 1. DB has GRNID or specific discount/charge columns
@@ -136,12 +142,6 @@ def detect_format(df_bu: pd.DataFrame, df_db: pd.DataFrame, mode: str = "Auto") 
 
     if has_f3_db or (has_afc_bu and not any(k in db_cols_clean for k in f2_db_indicators)):
         return "format3"
-
-    # Format 4 signatures: DB has so_id + SAP_ID (unique identifiers)
-    f4_db_indicators = ['soid', 'sapid']
-    has_f4_db = all(k in db_cols_clean for k in f4_db_indicators)
-    if has_f4_db:
-        return "format4"
 
     if any(k in db_cols_clean for k in f2_db_indicators):
         return "format2"

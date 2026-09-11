@@ -567,23 +567,26 @@ class ReconciliationEngine:
             'SAP_ID_Clean': 'DB_SAP_ID',
         })
 
-        # Determine which SAP ref column matches better (Ref.1 or Ref.2)
+        # Dynamically match Ref. 1 or Ref. 2 row-by-row based on db_ref_set
         report("Aggregating SAP ledger for Format 4", 2, 5)
         db_ref_set = set(db_agg['Ref_Clean'].unique())
 
-        def _count_matches(ref_col):
-            if ref_col is None:
-                return 0
-            cleaned = df_bu[ref_col].apply(clean_id)
-            return cleaned.isin(db_ref_set).sum()
+        clean_ref1 = df_bu[bu_ref1].apply(clean_id) if bu_ref1 else pd.Series('', index=df_bu.index)
+        clean_ref2 = df_bu[bu_ref2].apply(clean_id) if bu_ref2 else pd.Series('', index=df_bu.index)
 
-        ref1_matches = _count_matches(bu_ref1)
-        ref2_matches = _count_matches(bu_ref2)
-        bu_ref = bu_ref1 if ref1_matches >= ref2_matches else bu_ref2
-        if bu_ref is None:
-            bu_ref = bu_ref1 or bu_ref2 or df_bu.columns[0]
+        in_db_ref1 = clean_ref1.isin(db_ref_set)
+        in_db_ref2 = clean_ref2.isin(db_ref_set)
 
-        df_bu['Ref_Clean'] = df_bu[bu_ref].apply(clean_id)
+        ref_clean = np.where(
+            in_db_ref1,
+            clean_ref1,
+            np.where(
+                in_db_ref2,
+                clean_ref2,
+                np.where(clean_ref1 != '', clean_ref1, clean_ref2)
+            )
+        )
+        df_bu['Ref_Clean'] = ref_clean
         df_bu_valid = df_bu[df_bu['Ref_Clean'] != ''].copy()
         df_bu_valid['PostingDate_Std'] = parse_date_series(df_bu_valid[bu_date], dayfirst=True, missing_label='Missing in SAP') if bu_date else 'Missing in SAP'
         df_bu_valid['Offset_Clean'] = df_bu_valid[bu_acc].apply(clean_card) if bu_acc else ''
@@ -611,6 +614,19 @@ class ReconciliationEngine:
         recon = pd.merge(bu_agg, db_agg, on='Ref_Clean', how='right').rename(columns={'Ref_Clean': ref_col_name})
 
         # Fill missing values
+        dominant_bu = bu_agg['Business_Unit'].mode()[0] if ('Business_Unit' in bu_agg.columns and not bu_agg['Business_Unit'].empty) else ''
+        if 'COGSCostingCode' in recon.columns:
+            recon['Business_Unit'] = np.where(
+                recon['Business_Unit'].isin(['', 'Missing in SAP', np.nan]),
+                recon['COGSCostingCode'],
+                recon['Business_Unit']
+            )
+        if dominant_bu:
+            recon['Business_Unit'] = np.where(
+                recon['Business_Unit'].isin(['', 'Missing in SAP', np.nan]),
+                dominant_bu,
+                recon['Business_Unit']
+            )
         recon['Business_Unit'] = recon['Business_Unit'].fillna('Missing in SAP').replace('', 'Missing in SAP')
         recon['Total_CD_LC'] = recon['Total_CD_LC'].fillna(0.0)
         recon['Total_Sales_Value'] = recon['Total_Sales_Value'].fillna(0.0)
@@ -618,6 +634,9 @@ class ReconciliationEngine:
         recon['Sales_DocDate'] = recon['Sales_DocDate'].fillna('Missing in Sales/DB')
         recon['SAP_Offset_Account'] = recon['SAP_Offset_Account'].fillna('Missing in SAP')
         recon['DB_SAP_ID'] = recon['DB_SAP_ID'].fillna('Missing in Sales/DB')
+
+        # Customer code mapping if available
+        recon['Mapped_SAP_Code'] = recon['DB_SAP_ID'].apply(self.customer_service.get_mapped_sap_code)
 
         # 1. Amount Match
         recon['Amount_Variance'] = (recon['Total_CD_LC'] - recon['Total_Sales_Value']).round(2)
@@ -630,13 +649,21 @@ class ReconciliationEngine:
             & (recon['Sales_DocDate'] != 'Missing in Sales/DB')
         )
 
-        # 3. SAP_ID / Offset Account Match
+        # 3. SAP_ID / Offset Account Match (direct or mapped)
         sap_c = recon['SAP_Offset_Account'].astype(str).str.lstrip('0')
         db_c = recon['DB_SAP_ID'].astype(str).str.lstrip('0')
-        recon['Customer_Match'] = (
+        mapped_c = recon['Mapped_SAP_Code'].astype(str).str.lstrip('0')
+
+        direct_match = (
             ((recon['SAP_Offset_Account'] == recon['DB_SAP_ID']) | ((sap_c == db_c) & (sap_c != '')))
             & (recon['SAP_Offset_Account'] != 'Missing in SAP')
         )
+        mapped_match = (
+            ((recon['SAP_Offset_Account'] == recon['Mapped_SAP_Code']) | ((sap_c == mapped_c) & (sap_c != '')))
+            & (recon['SAP_Offset_Account'] != 'Missing in SAP')
+            & (recon['Mapped_SAP_Code'] != '')
+        )
+        recon['Customer_Match'] = direct_match | mapped_match
 
         report("Computing Format 4 reconciliation remarks", 4, 5)
         missing_sap = (
@@ -688,7 +715,7 @@ class ReconciliationEngine:
             'Business_Unit', ref_col_name,
             'Total_CD_LC', 'Total_Sales_Value', 'Amount_Variance',
             'Posting_Date', 'Sales_DocDate',
-            'DB_SAP_ID', 'SAP_Offset_Account',
+            'DB_SAP_ID', 'Mapped_SAP_Code', 'SAP_Offset_Account',
             'Overall_Status', 'Reconciliation_Remarks', 'Format_Used'
         ]
         return recon[cols].copy()
@@ -786,8 +813,22 @@ class ReconciliationEngine:
 
         report(f"Merging and computing {cn_format} variances", 3, 5)
         recon = pd.merge(sap_agg, cn_agg, on='Ref_Clean', how='outer').rename(columns={'Ref_Clean': ref_col_name})
+        recon = pd.merge(sap_agg, cn_agg, on='Ref_Clean', how='right').rename(columns={'Ref_Clean': ref_col_name})
 
         recon['Business_Unit'] = recon['Business_Unit'].fillna(recon.get('CN_BU', '')).replace('', 'Missing in SAP')
+        dominant_sap_bu = sap_agg['Business_Unit'].mode()[0] if ('Business_Unit' in sap_agg.columns and not sap_agg['Business_Unit'].empty) else ''
+        if dominant_sap_bu:
+            recon['Business_Unit'] = np.where(
+                recon['Business_Unit'].isin(['', 'Missing in SAP', np.nan]),
+                dominant_sap_bu,
+                recon['Business_Unit']
+            )
+        elif 'CN_BU' in recon.columns:
+            recon['Business_Unit'] = np.where(
+                recon['Business_Unit'].isin(['', 'Missing in SAP', np.nan]),
+                recon['CN_BU'],
+                recon['Business_Unit']
+            )
         recon['Business_Unit'] = recon['Business_Unit'].fillna('Missing in SAP').replace('', 'Missing in SAP')
         recon['Total_CD_LC'] = recon['Total_CD_LC'].fillna(0.0)
         recon['CN_DB_Amount'] = recon['CN_DB_Amount'].fillna(0.0)
@@ -1120,6 +1161,19 @@ def process_file_list(
                         matched_ref_ids.update(
                             sales_rows[ref_col].dropna().astype(str).str.strip().values
                         )
+            # Collect all DB reference IDs across sales and CN
+            all_db_refs: set = set()
+            for _, f_db in sales_files:
+                for col in f_db.columns:
+                    c_clean = re.sub(r'[\s_\-\(\)\/\.]+', '', str(col).lower())
+                    if c_clean in ('soid', 'invoiceid', 'refid', 'ref1', 'invoicenumber', 'ref2invoiceno', 'reference'):
+                        all_db_refs.update(f_db[col].dropna().apply(clean_id).values)
+            for _, f_cn, _ in cn_files:
+                for col in f_cn.columns:
+                    c_clean = re.sub(r'[\s_\-\(\)\/\.]+', '', str(col).lower())
+                    if c_clean in ('creditnoteid', 'cnid', 'orderid'):
+                        all_db_refs.update(f_cn[col].dropna().apply(clean_id).values)
+            all_db_refs.discard('')
 
             # Find SAP rows whose Ref.1 or Ref.2 are not in any matched set
             ref_candidates = ['Ref. 2', 'Ref 2', 'Ref.2', 'Ref2', 'Ref. 2 (Header)',
@@ -1130,12 +1184,25 @@ def process_file_list(
                     break
             else:
                 sap_ref_col = None
+            # Find all Ref columns in SAP ledger
+            ref_cols = [c for c in all_sales_sap.columns if any(k in str(c).lower() for k in ['ref. 1', 'ref. 2', 'ref 1', 'ref 2', 'ref1', 'ref2'])]
+            has_db_match = pd.Series(False, index=all_sales_sap.index)
+            for rc in ref_cols:
+                clean_series = all_sales_sap[rc].apply(clean_id)
+                has_db_match |= clean_series.isin(all_db_refs)
 
             if sap_ref_col:
                 sap_refs_clean = all_sales_sap[sap_ref_col].apply(clean_id)
                 not_in_db_mask = ~sap_refs_clean.isin(matched_ref_ids) & (sap_refs_clean != '')
                 if not_in_db_mask.any():
                     data_not_in_db_frames.append(all_sales_sap[not_in_db_mask].copy())
+            # Exclude metadata rows (e.g. Doc. No. is empty/NaN)
+            doc_no_col = next((c for c in all_sales_sap.columns if 'doc. no' in str(c).lower() or 'doc no' in str(c).lower()), None)
+            valid_mask = all_sales_sap[doc_no_col].notna() if doc_no_col else pd.Series(True, index=all_sales_sap.index)
+
+            not_in_db = all_sales_sap[~has_db_match & valid_mask]
+            if not not_in_db.empty:
+                data_not_in_db_frames.append(not_in_db.copy())
 
     # ------------------------------------------------------------------
     # Step 6: Collection reconciliation
