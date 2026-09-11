@@ -137,6 +137,12 @@ def detect_format(df_bu: pd.DataFrame, df_db: pd.DataFrame, mode: str = "Auto") 
     if has_f3_db or (has_afc_bu and not any(k in db_cols_clean for k in f2_db_indicators)):
         return "format3"
 
+    # Format 4 signatures: DB has so_id + SAP_ID (unique identifiers)
+    f4_db_indicators = ['soid', 'sapid']
+    has_f4_db = all(k in db_cols_clean for k in f4_db_indicators)
+    if has_f4_db:
+        return "format4"
+
     if any(k in db_cols_clean for k in f2_db_indicators):
         return "format2"
     if any(k in db_cols_clean for k in f1_db_indicators):
@@ -147,4 +153,59 @@ def detect_format(df_bu: pd.DataFrame, df_db: pd.DataFrame, mode: str = "Auto") 
         return "format2"
 
     return "format1"
+
+
+def is_cn_table(df: pd.DataFrame) -> Optional[str]:
+    """Detects whether a DataFrame is a Credit Note data file and returns the CN format type.
+
+    Returns:
+        'cn_format1' if DB has order_id + Credit_note_amount + gst_percentage
+        'cn_format2' if DB has CN_ID + Credit_note_amount + CN_Date
+        'cn_format4' if DB has Credit_Note_ID + Amount + Date (without so_id)
+        None if not a CN table
+    """
+    if df.empty:
+        return None
+
+    cols_clean = [re.sub(r'[\s_\-\(\)\/\.]+', '', str(c).lower()) for c in df.columns]
+
+    # CN Format 1: order_id + Credit_note_amount + gst_percentage
+    cn1_indicators = {
+        'ref': ['orderid'],
+        'amount': ['creditnoteamount', 'cnamount', 'creditamount'],
+        'gst': ['gstpercentage', 'gst', 'gstrate', 'taxrate'],
+    }
+    has_cn1_ref = any(k in c for c in cols_clean for k in cn1_indicators['ref'])
+    has_cn1_amt = any(k in c for c in cols_clean for k in cn1_indicators['amount'])
+    has_cn1_gst = any(k in c for c in cols_clean for k in cn1_indicators['gst'])
+    if has_cn1_ref and has_cn1_amt and has_cn1_gst:
+        return "cn_format1"
+
+    # CN Format 2: CN_ID + Credit_note_amount + CN_Date
+    cn2_indicators = {
+        'ref': ['cnid', 'creditnoteid', 'cnnumber'],
+        'amount': ['creditnoteamount', 'cnamount', 'creditamount'],
+        'date': ['cndate', 'creditnotedate'],
+    }
+    has_cn2_ref = any(k in c for c in cols_clean for k in cn2_indicators['ref'])
+    has_cn2_amt = any(k in c for c in cols_clean for k in cn2_indicators['amount'])
+    has_cn2_date = any(k in c for c in cols_clean for k in cn2_indicators['date'])
+    if has_cn2_ref and has_cn2_amt and has_cn2_date:
+        return "cn_format2"
+
+    # CN Format 4: Credit_Note_ID + Amount + Date (without so_id which would make it Format 4 Sales)
+    cn4_indicators = {
+        'ref': ['creditnoteid', 'cnid'],
+    }
+    has_cn4_ref = any(k in c for c in cols_clean for k in cn4_indicators['ref'])
+    has_so_id = any('soid' in c for c in cols_clean)
+    # Must have Credit_Note_ID but NOT so_id (so_id would make it Format 4 sales)
+    if has_cn4_ref and not has_so_id:
+        # Check it also has an amount column and date column
+        has_amt = any(k in c for c in cols_clean for k in ['amount', 'creditnoteamount', 'cnamount'])
+        has_date = any(k in c for c in cols_clean for k in ['date', 'cndate', 'creditnotedate'])
+        if has_amt and has_date:
+            return "cn_format4"
+
+    return None
 

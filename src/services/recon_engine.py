@@ -12,8 +12,12 @@ from ..core.cleaners import (
     clean_id, clean_afc_id, clean_card, clean_number, clean_signed_number,
     clean_number_series, clean_signed_number_series, parse_date_series
 )
-from ..core.constants import FORMAT1_BU_COLS, FORMAT1_DB_COLS, FORMAT2_BU_COLS, FORMAT2_DB_COLS, FORMAT3_BU_COLS, FORMAT3_DB_COLS
-from ..core.detector import find_best_col, detect_format, is_sap_table
+from ..core.constants import (
+    FORMAT1_BU_COLS, FORMAT1_DB_COLS, FORMAT2_BU_COLS, FORMAT2_DB_COLS,
+    FORMAT3_BU_COLS, FORMAT3_DB_COLS, FORMAT4_BU_COLS, FORMAT4_DB_COLS,
+    CN_FORMAT1_DB_COLS, CN_FORMAT2_DB_COLS, CN_FORMAT4_DB_COLS, CN_SAP_COLS,
+)
+from ..core.detector import find_best_col, detect_format, is_sap_table, is_cn_table
 from ..readers.file_reader import read_file_tables
 from .customer_service import CustomerMappingService
 from .bank_recon import reconcile_bank_to_sap, detect_bank_type, is_bank_table
@@ -94,6 +98,9 @@ class ReconciliationEngine:
 
         if fmt == "format3":
             return self._reconcile_format3(df_bu, df_db, df_freight_sap_raw, report)
+
+        if fmt == "format4":
+            return self._reconcile_format4(df_bu, df_db, report)
 
         if fmt == "format2":
             bu_cols = FORMAT2_BU_COLS
@@ -512,6 +519,340 @@ class ReconciliationEngine:
         ]
         return recon[cols].copy()
 
+    def _reconcile_format4(
+        self,
+        df_bu: pd.DataFrame,
+        df_db: pd.DataFrame,
+        report: Callable[[str, int, int], None],
+    ) -> pd.DataFrame:
+        """Format 4 reconciliation: DB so_id matched against SAP Ref.1 or Ref.2."""
+        bu_cols = FORMAT4_BU_COLS
+        db_cols = FORMAT4_DB_COLS
+        format_label = 'Format 4 (SO_ID / Sales with SAP_ID)'
+        ref_col_name = 'SO_ID'
+
+        report("Finding Format 4 column mappings", 0, 5)
+        # SAP side: try both Ref.1 and Ref.2 to find the best match
+        bu_ref1 = find_best_col(df_bu, bu_cols['ref1'])
+        bu_ref2 = find_best_col(df_bu, bu_cols['ref2'])
+        bu_date = find_best_col(df_bu, bu_cols['date'])
+        bu_amt = find_best_col(df_bu, bu_cols['amt'])
+        bu_acc = find_best_col(df_bu, bu_cols['acc'])
+        bu_unit = find_best_col(df_bu, bu_cols['unit'])
+
+        db_ref = find_best_col(df_db, db_cols['ref']) or df_db.columns[0]
+        db_date = find_best_col(df_db, db_cols['date'])
+        db_taxable = find_best_col(df_db, db_cols['taxable'])
+        db_sap_id = find_best_col(df_db, db_cols['sap_id'])
+        db_unit = find_best_col(df_db, db_cols['unit'])
+
+        # DB aggregation first (to get clean IDs for matching)
+        report("Aggregating Format 4 DB records", 1, 5)
+        df_db['Ref_Clean'] = df_db[db_ref].apply(clean_id)
+        df_db_valid = df_db[df_db['Ref_Clean'] != ''].copy()
+        df_db_valid['DocDate_Std'] = parse_date_series(df_db_valid[db_date], dayfirst=True, missing_label='Missing in Sales/DB') if db_date else 'Missing in Sales/DB'
+        df_db_valid['DB_BU_Clean'] = df_db_valid[db_unit].astype(str) if db_unit else ''
+        df_db_valid['Taxable_Clean'] = clean_number_series(df_db_valid[db_taxable]) if db_taxable else 0.0
+        df_db_valid['SAP_ID_Clean'] = df_db_valid[db_sap_id].apply(clean_card) if db_sap_id else ''
+
+        db_agg = df_db_valid.groupby('Ref_Clean', as_index=False).agg({
+            'DB_BU_Clean': 'first',
+            'DocDate_Std': 'first',
+            'Taxable_Clean': 'sum',
+            'SAP_ID_Clean': 'first',
+        }).rename(columns={
+            'DB_BU_Clean': 'COGSCostingCode',
+            'DocDate_Std': 'Sales_DocDate',
+            'Taxable_Clean': 'Total_Sales_Value',
+            'SAP_ID_Clean': 'DB_SAP_ID',
+        })
+
+        # Determine which SAP ref column matches better (Ref.1 or Ref.2)
+        report("Aggregating SAP ledger for Format 4", 2, 5)
+        db_ref_set = set(db_agg['Ref_Clean'].unique())
+
+        def _count_matches(ref_col):
+            if ref_col is None:
+                return 0
+            cleaned = df_bu[ref_col].apply(clean_id)
+            return cleaned.isin(db_ref_set).sum()
+
+        ref1_matches = _count_matches(bu_ref1)
+        ref2_matches = _count_matches(bu_ref2)
+        bu_ref = bu_ref1 if ref1_matches >= ref2_matches else bu_ref2
+        if bu_ref is None:
+            bu_ref = bu_ref1 or bu_ref2 or df_bu.columns[0]
+
+        df_bu['Ref_Clean'] = df_bu[bu_ref].apply(clean_id)
+        df_bu_valid = df_bu[df_bu['Ref_Clean'] != ''].copy()
+        df_bu_valid['PostingDate_Std'] = parse_date_series(df_bu_valid[bu_date], dayfirst=True, missing_label='Missing in SAP') if bu_date else 'Missing in SAP'
+        df_bu_valid['Offset_Clean'] = df_bu_valid[bu_acc].apply(clean_card) if bu_acc else ''
+        df_bu_valid['BU_Clean'] = df_bu_valid[bu_unit].astype(str) if bu_unit else 'Default_BU'
+        df_bu_valid['Amt_Clean'] = clean_signed_number_series(df_bu_valid[bu_amt]) if bu_amt else 0.0
+
+        bu_groups = df_bu_valid.groupby('Ref_Clean', sort=False)
+        bu_agg = bu_groups.agg({
+            'BU_Clean': 'first',
+            'PostingDate_Std': 'first',
+            'Offset_Clean': 'first',
+            'Amt_Clean': 'sum'
+        }).rename(columns={
+            'BU_Clean': 'Business_Unit',
+            'PostingDate_Std': 'Posting_Date',
+            'Offset_Clean': 'SAP_Offset_Account',
+            'Amt_Clean': 'Total_CD_LC'
+        })
+        bu_agg['Total_CD_LC'] = bu_agg['Total_CD_LC'].abs().round(2)
+
+        offsets = compute_effective_offsets(df_bu_valid)
+        bu_agg = bu_agg.drop(columns=['SAP_Offset_Account']).join(offsets, on='Ref_Clean')
+
+        report("Merging and computing Format 4 variances", 3, 5)
+        recon = pd.merge(bu_agg, db_agg, on='Ref_Clean', how='right').rename(columns={'Ref_Clean': ref_col_name})
+
+        # Fill missing values
+        recon['Business_Unit'] = recon['Business_Unit'].fillna('Missing in SAP').replace('', 'Missing in SAP')
+        recon['Total_CD_LC'] = recon['Total_CD_LC'].fillna(0.0)
+        recon['Total_Sales_Value'] = recon['Total_Sales_Value'].fillna(0.0)
+        recon['Posting_Date'] = recon['Posting_Date'].fillna('Missing in SAP')
+        recon['Sales_DocDate'] = recon['Sales_DocDate'].fillna('Missing in Sales/DB')
+        recon['SAP_Offset_Account'] = recon['SAP_Offset_Account'].fillna('Missing in SAP')
+        recon['DB_SAP_ID'] = recon['DB_SAP_ID'].fillna('Missing in Sales/DB')
+
+        # 1. Amount Match
+        recon['Amount_Variance'] = (recon['Total_CD_LC'] - recon['Total_Sales_Value']).round(2)
+        recon['Amount_Match'] = recon['Amount_Variance'].abs() <= 1.0
+
+        # 2. Date Match
+        recon['Date_Match'] = (
+            (recon['Posting_Date'] == recon['Sales_DocDate'])
+            & (recon['Posting_Date'] != 'Missing in SAP')
+            & (recon['Sales_DocDate'] != 'Missing in Sales/DB')
+        )
+
+        # 3. SAP_ID / Offset Account Match
+        sap_c = recon['SAP_Offset_Account'].astype(str).str.lstrip('0')
+        db_c = recon['DB_SAP_ID'].astype(str).str.lstrip('0')
+        recon['Customer_Match'] = (
+            ((recon['SAP_Offset_Account'] == recon['DB_SAP_ID']) | ((sap_c == db_c) & (sap_c != '')))
+            & (recon['SAP_Offset_Account'] != 'Missing in SAP')
+        )
+
+        report("Computing Format 4 reconciliation remarks", 4, 5)
+        missing_sap = (
+            (recon['Posting_Date'] == 'Missing in SAP')
+            | (recon['SAP_Offset_Account'] == 'Missing in SAP')
+        )
+        missing_db = (
+            (recon['Sales_DocDate'] == 'Missing in Sales/DB')
+            | (recon['DB_SAP_ID'] == 'Missing in Sales/DB')
+        )
+        has_both = ~missing_sap & ~missing_db
+        amt_issue = has_both & ~recon['Amount_Match']
+        date_issue = has_both & ~recon['Date_Match']
+        cust_issue = has_both & ~recon['Customer_Match']
+
+        var_str = recon['Amount_Variance'].map(lambda v: f"Amount Variance ({v})")
+        date_str = ("Date Mismatch (" + recon['Posting_Date'].astype(str) + " vs " + recon['Sales_DocDate'].astype(str) + ")")
+        cust_str = ("SAP_ID Mismatch (SAP: " + recon['SAP_Offset_Account'].astype(str)
+                    + " vs DB: " + recon['DB_SAP_ID'].astype(str) + ")")
+
+        has_issues = amt_issue | date_issue | cust_issue
+        combined_issues = pd.Series('', index=recon.index)
+        if has_issues.any():
+            part_amt = np.where(amt_issue, var_str, '')
+            part_date = np.where(date_issue, date_str, '')
+            part_cust = np.where(cust_issue, cust_str, '')
+            combined_issues = _vectorized_join_remarks([part_amt, part_date, part_cust], recon.index)
+
+        conditions = [
+            missing_sap,
+            missing_db,
+            has_both & has_issues,
+        ]
+        choices = [
+            'MISMATCHED: Missing in SAP',
+            'MISMATCHED: Missing in Sales/DB',
+            'MISMATCHED: ' + combined_issues,
+        ]
+        recon['Reconciliation_Remarks'] = np.select(conditions, choices, default='MATCHED')
+        recon['Overall_Status'] = np.where(
+            recon['Reconciliation_Remarks'].str.startswith('MATCHED'),
+            'Matched',
+            'Not Matched',
+        )
+        recon['Format_Used'] = format_label
+
+        report("Format 4 reconciliation complete", 5, 5)
+        cols = [
+            'Business_Unit', ref_col_name,
+            'Total_CD_LC', 'Total_Sales_Value', 'Amount_Variance',
+            'Posting_Date', 'Sales_DocDate',
+            'DB_SAP_ID', 'SAP_Offset_Account',
+            'Overall_Status', 'Reconciliation_Remarks', 'Format_Used'
+        ]
+        return recon[cols].copy()
+
+    def _reconcile_cn(
+        self,
+        df_sap: pd.DataFrame,
+        df_cn_db: pd.DataFrame,
+        cn_format: str,
+        report: Callable[[str, int, int], None],
+    ) -> pd.DataFrame:
+        """Unified Credit Note reconciliation for all CN formats.
+
+        CN always matches against SAP Ref. 2.
+
+        Args:
+            df_sap: SAP ledger DataFrame
+            df_cn_db: Credit Note DB DataFrame
+            cn_format: One of 'cn_format1', 'cn_format2', 'cn_format4'
+            report: Progress callback
+        """
+        sap_cols = CN_SAP_COLS
+
+        if cn_format == 'cn_format1':
+            cn_cols = CN_FORMAT1_DB_COLS
+            format_label = 'CN Format 1 (order_id → SAP Ref.2)'
+        elif cn_format == 'cn_format2':
+            cn_cols = CN_FORMAT2_DB_COLS
+            format_label = 'CN Format 2 (CN_ID → SAP Ref.2)'
+        elif cn_format == 'cn_format4':
+            cn_cols = CN_FORMAT4_DB_COLS
+            format_label = 'CN Format 4 (Credit_Note_ID → SAP Ref.2)'
+        else:
+            raise ValueError(f"Unknown CN format: {cn_format}")
+
+        ref_col_name = 'CN_Reference'
+
+        report(f"Finding {cn_format} column mappings", 0, 5)
+        # SAP side — always Ref. 2
+        sap_ref = find_best_col(df_sap, sap_cols['ref']) or df_sap.columns[0]
+        sap_date = find_best_col(df_sap, sap_cols['date'])
+        sap_amt = find_best_col(df_sap, sap_cols['amt'])
+        sap_unit = find_best_col(df_sap, sap_cols['unit'])
+
+        # CN DB side
+        cn_ref = find_best_col(df_cn_db, cn_cols['ref']) or df_cn_db.columns[0]
+        cn_date = find_best_col(df_cn_db, cn_cols['date'])
+        cn_amount = find_best_col(df_cn_db, cn_cols['amount'])
+        cn_unit = find_best_col(df_cn_db, cn_cols.get('unit', []))
+        cn_gst = find_best_col(df_cn_db, cn_cols.get('gst', [])) if cn_format == 'cn_format1' else None
+
+        report(f"Aggregating SAP ledger for {cn_format}", 1, 5)
+        df_sap_c = df_sap.copy()
+        df_sap_c['Ref_Clean'] = df_sap_c[sap_ref].apply(clean_id)
+        df_sap_valid = df_sap_c[df_sap_c['Ref_Clean'] != ''].copy()
+        df_sap_valid['PostingDate_Std'] = parse_date_series(df_sap_valid[sap_date], dayfirst=True, missing_label='Missing in SAP') if sap_date else 'Missing in SAP'
+        df_sap_valid['BU_Clean'] = df_sap_valid[sap_unit].astype(str) if sap_unit else 'Default_BU'
+        df_sap_valid['Amt_Clean'] = clean_signed_number_series(df_sap_valid[sap_amt]) if sap_amt else 0.0
+
+        sap_agg = df_sap_valid.groupby('Ref_Clean', sort=False).agg({
+            'BU_Clean': 'first',
+            'PostingDate_Std': 'first',
+            'Amt_Clean': 'sum',
+        }).rename(columns={
+            'BU_Clean': 'Business_Unit',
+            'PostingDate_Std': 'Posting_Date',
+            'Amt_Clean': 'Total_CD_LC',
+        })
+        sap_agg['Total_CD_LC'] = sap_agg['Total_CD_LC'].abs().round(2)
+
+        report(f"Aggregating CN DB records for {cn_format}", 2, 5)
+        df_cn = df_cn_db.copy()
+        df_cn['Ref_Clean'] = df_cn[cn_ref].apply(clean_id)
+        df_cn_valid = df_cn[df_cn['Ref_Clean'] != ''].copy()
+        df_cn_valid['CN_Date_Std'] = parse_date_series(df_cn_valid[cn_date], dayfirst=True, missing_label='Missing in CN/DB') if cn_date else 'Missing in CN/DB'
+        df_cn_valid['CN_BU_Clean'] = df_cn_valid[cn_unit].astype(str) if cn_unit else ''
+        df_cn_valid['CN_Amount_Raw'] = clean_number_series(df_cn_valid[cn_amount]) if cn_amount else 0.0
+
+        # For Format 1 CN: amount is without GST → CN_Amount = Credit_note_amount / (1 + gst_percentage/100)
+        if cn_format == 'cn_format1' and cn_gst:
+            gst_pct = clean_number_series(df_cn_valid[cn_gst])
+            df_cn_valid['CN_Amount_Clean'] = (df_cn_valid['CN_Amount_Raw'] / (1 + gst_pct / 100)).round(2)
+        else:
+            df_cn_valid['CN_Amount_Clean'] = df_cn_valid['CN_Amount_Raw'].round(2)
+
+        cn_agg = df_cn_valid.groupby('Ref_Clean', as_index=False).agg({
+            'CN_BU_Clean': 'first',
+            'CN_Date_Std': 'first',
+            'CN_Amount_Clean': 'sum',
+        }).rename(columns={
+            'CN_BU_Clean': 'CN_BU',
+            'CN_Date_Std': 'CN_Date',
+            'CN_Amount_Clean': 'CN_DB_Amount',
+        })
+
+        report(f"Merging and computing {cn_format} variances", 3, 5)
+        recon = pd.merge(sap_agg, cn_agg, on='Ref_Clean', how='outer').rename(columns={'Ref_Clean': ref_col_name})
+
+        recon['Business_Unit'] = recon['Business_Unit'].fillna(recon.get('CN_BU', '')).replace('', 'Missing in SAP')
+        recon['Business_Unit'] = recon['Business_Unit'].fillna('Missing in SAP').replace('', 'Missing in SAP')
+        recon['Total_CD_LC'] = recon['Total_CD_LC'].fillna(0.0)
+        recon['CN_DB_Amount'] = recon['CN_DB_Amount'].fillna(0.0)
+        recon['Posting_Date'] = recon['Posting_Date'].fillna('Missing in SAP')
+        recon['CN_Date'] = recon['CN_Date'].fillna('Missing in CN/DB')
+
+        # Amount Match
+        recon['Amount_Variance'] = (recon['Total_CD_LC'] - recon['CN_DB_Amount']).round(2)
+        recon['Amount_Match'] = recon['Amount_Variance'].abs() <= 1.0
+
+        # Date Match
+        recon['Date_Match'] = (
+            (recon['Posting_Date'] == recon['CN_Date'])
+            & (recon['Posting_Date'] != 'Missing in SAP')
+            & (recon['CN_Date'] != 'Missing in CN/DB')
+        )
+
+        report(f"Computing {cn_format} reconciliation remarks", 4, 5)
+        missing_sap = recon['Posting_Date'] == 'Missing in SAP'
+        missing_cn = recon['CN_Date'] == 'Missing in CN/DB'
+        has_both = ~missing_sap & ~missing_cn
+        amt_issue = has_both & ~recon['Amount_Match']
+        date_issue = has_both & ~recon['Date_Match']
+
+        var_str = recon['Amount_Variance'].map(lambda v: f"Amount Variance ({v})")
+        date_str = ("Date Mismatch (" + recon['Posting_Date'].astype(str) + " vs " + recon['CN_Date'].astype(str) + ")")
+
+        has_issues = amt_issue | date_issue
+        combined_issues = pd.Series('', index=recon.index)
+        if has_issues.any():
+            part_amt = np.where(amt_issue, var_str, '')
+            part_date = np.where(date_issue, date_str, '')
+            combined_issues = _vectorized_join_remarks([part_amt, part_date], recon.index)
+
+        conditions = [
+            missing_sap,
+            missing_cn,
+            has_both & has_issues,
+        ]
+        choices = [
+            'MISMATCHED: Missing in SAP',
+            'MISMATCHED: Missing in CN/DB',
+            'MISMATCHED: ' + combined_issues,
+        ]
+        recon['Reconciliation_Remarks'] = np.select(conditions, choices, default='MATCHED')
+        recon['Overall_Status'] = np.where(
+            recon['Reconciliation_Remarks'].str.startswith('MATCHED'),
+            'Matched',
+            'Not Matched',
+        )
+        recon['Format_Used'] = format_label
+        recon['Particulars'] = 'CN'
+
+        # Rename CN_DB_Amount to Total_Sales_Value for consistency with sales recon output
+        recon = recon.rename(columns={'CN_DB_Amount': 'Total_Sales_Value', 'CN_Date': 'Sales_DocDate'})
+
+        report(f"{cn_format} reconciliation complete", 5, 5)
+        cols = [
+            'Business_Unit', ref_col_name,
+            'Total_CD_LC', 'Total_Sales_Value', 'Amount_Variance',
+            'Posting_Date', 'Sales_DocDate',
+            'Overall_Status', 'Reconciliation_Remarks', 'Format_Used', 'Particulars'
+        ]
+        return recon[cols].copy()
+
 
 # ---------------------------------------------------------------------------
 # Functional convenience wrappers for compatibility
@@ -624,7 +965,17 @@ def process_file_list(
     # ------------------------------------------------------------------
     sap_files = [(p, f) for p, f in parsed if is_sap_table(f)]
     bank_files = [(p, f) for p, f in parsed if not is_sap_table(f) and is_bank_table(f)]
-    sales_files = [(p, f) for p, f in parsed if not is_sap_table(f) and not is_bank_table(f)]
+    # Separate CN files from regular sales files
+    cn_files: List[tuple] = []  # (path, frame, cn_format)
+    sales_files: List[tuple] = []
+    for p, f in parsed:
+        if is_sap_table(f) or is_bank_table(f):
+            continue
+        cn_fmt = is_cn_table(f)
+        if cn_fmt:
+            cn_files.append((p, f, cn_fmt))
+        else:
+            sales_files.append((p, f))
 
     # ------------------------------------------------------------------
     # Step 4: Resolve recon_model
@@ -722,6 +1073,71 @@ def process_file_list(
             report("Reconciling sales records", group_index, total_sales_groups)
 
     # ------------------------------------------------------------------
+    # Step 5b: Credit Note (CN) reconciliation
+    # ------------------------------------------------------------------
+    if use_sales and sap_files and cn_files:
+        check_cancelled()
+        if not sales_sap_frames:
+            sales_sap_frames = [f for _, f in sap_files]
+        cn_sap = pd.concat(sales_sap_frames, ignore_index=True)
+
+        engine = ReconciliationEngine(mode=mode, customer_service=cust_service)
+        for cn_index, (cn_path, cn_frame, cn_fmt) in enumerate(cn_files, 1):
+            check_cancelled()
+            report(f"Reconciling CN records ({cn_fmt})", cn_index - 1, len(cn_files))
+            try:
+                cn_result = engine._reconcile_cn(
+                    cn_sap,
+                    cn_frame,
+                    cn_fmt,
+                    report=lambda stage, cur=0, tot=0: report(stage, cur, tot),
+                )
+                cn_labeled = label_result(cn_result, "Sales")
+                results.append(cn_labeled)
+            except Exception:
+                pass  # Skip CN files that fail gracefully
+            report(f"Reconciling CN records ({cn_fmt})", cn_index, len(cn_files))
+
+    # ------------------------------------------------------------------
+    # Step 5c: Track SAP records not available in DB
+    # ------------------------------------------------------------------
+    data_not_in_db_frames: List[pd.DataFrame] = []
+    if use_sales and sap_files and results:
+        if not sales_sap_frames:
+            sales_sap_frames = [f for _, f in sap_files if not is_freight_sap_file(f)]
+        if sales_sap_frames:
+            all_sales_sap = pd.concat(sales_sap_frames, ignore_index=True)
+            # Collect all matched reference IDs from sales results
+            matched_ref_ids: set = set()
+            for res_df in results:
+                if 'Recon_Type' in res_df.columns:
+                    sales_rows = res_df[res_df['Recon_Type'] == 'Sales']
+                else:
+                    sales_rows = res_df
+                # Gather reference IDs from all possible ref columns
+                for ref_col in ['InvoiceId', 'RefId_Ref1', 'Ref2_Invoice_No', 'SO_ID', 'CN_Reference']:
+                    if ref_col in sales_rows.columns:
+                        matched_ref_ids.update(
+                            sales_rows[ref_col].dropna().astype(str).str.strip().values
+                        )
+
+            # Find SAP rows whose Ref.1 or Ref.2 are not in any matched set
+            ref_candidates = ['Ref. 2', 'Ref 2', 'Ref.2', 'Ref2', 'Ref. 2 (Header)',
+                              'Ref. 1', 'Ref 1', 'Ref.1', 'Ref1', 'Ref. 1 (Header)']
+            for rc in ref_candidates:
+                if rc in all_sales_sap.columns:
+                    sap_ref_col = rc
+                    break
+            else:
+                sap_ref_col = None
+
+            if sap_ref_col:
+                sap_refs_clean = all_sales_sap[sap_ref_col].apply(clean_id)
+                not_in_db_mask = ~sap_refs_clean.isin(matched_ref_ids) & (sap_refs_clean != '')
+                if not_in_db_mask.any():
+                    data_not_in_db_frames.append(all_sales_sap[not_in_db_mask].copy())
+
+    # ------------------------------------------------------------------
     # Step 6: Collection reconciliation
     # ------------------------------------------------------------------
     if use_collection and sap_files and bank_files:
@@ -756,6 +1172,9 @@ def process_file_list(
             combined.attrs['raw_collection_sap'] = pd.concat(bank_sap_frames, ignore_index=True)
         if bank_files and use_collection:
             combined.attrs['raw_collection_bank'] = pd.concat([f for _, f in bank_files], ignore_index=True)
+        # Attach "Data Not Available in DB" if any unmatched SAP rows found
+        if data_not_in_db_frames:
+            combined.attrs['data_not_in_db'] = pd.concat(data_not_in_db_frames, ignore_index=True)
         return combined
 
     # ------------------------------------------------------------------

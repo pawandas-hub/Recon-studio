@@ -62,6 +62,55 @@ FORMAT3_DB_COLS = {
     'unit': ['SO_Project', 'COGSCostingCode', 'Business Unit', 'BU', 'Branch']
 }
 
+# Format 4 (SO_ID based / Sales with SAP_ID) Column Candidates
+FORMAT4_BU_COLS = {
+    'ref1': ['Ref. 1 (Header)', 'Ref 1 (Header)', 'Ref. 1', 'Ref1', 'Ref 1', 'Reference', 'DocNum'],
+    'ref2': ['Ref. 2 (Header)', 'Ref 2 (Header)', 'Ref. 2', 'Ref 2', 'Ref.2', 'Ref2', 'Origin No.'],
+    'date': ['Posting Date', 'PostingDate', 'DocDate', 'Date'],
+    'amt': ['C/D (LC)', 'C/D(LC)', 'CD LC', 'Deb./Cred. (LC)', 'Deb/Cred (LC)', 'Debit/Credit (LC)', 'Debit (LC)', 'Amount (LC)', 'LC Amount'],
+    'acc': ['Offset Account', 'OffsetAccount', 'Offset Acct', 'Account', 'CardCode'],
+    'unit': ['Business Unit', 'BU', 'Branch', 'Unit', 'COGSCostingCode']
+}
+
+FORMAT4_DB_COLS = {
+    'ref': ['so_id', 'SO_ID', 'SoId', 'SO_Id', 'SOID'],
+    'date': ['DocDate', 'Doc Date', 'Doc_Date', 'Date', 'Posting Date'],
+    'taxable': ['TaxableAmount', 'Taxable Amount', 'TAXABLEAMOUNT', 'Taxable_Amount', 'Amount'],
+    'sap_id': ['SAP_ID', 'SAPID', 'SAP ID', 'Sap_Id', 'SapId', 'SAP_Code'],
+    'unit': ['Business Unit', 'BU', 'Branch', 'Unit', 'COGSCostingCode']
+}
+
+# Credit Note (CN) Column Candidates per format
+CN_FORMAT1_DB_COLS = {
+    'ref': ['order_id', 'Order_ID', 'OrderId', 'Order ID', 'OrderID'],
+    'date': ['created_at', 'Created_At', 'CreatedAt', 'Created At', 'Creation Date'],
+    'amount': ['Credit_note_amount', 'CreditNoteAmount', 'Credit Note Amount', 'CN_Amount', 'CreditAmount'],
+    'gst': ['gst_percentage', 'GST_Percentage', 'GST Percentage', 'GST%', 'GST_Rate', 'Tax_Rate'],
+    'unit': ['Business Unit', 'BU', 'Branch', 'Unit', 'COGSCostingCode']
+}
+
+CN_FORMAT2_DB_COLS = {
+    'ref': ['CN_ID', 'CNID', 'CN ID', 'CreditNoteID', 'Credit_Note_ID', 'CN_Number'],
+    'date': ['CN_Date', 'CNDate', 'CN Date', 'Credit_Note_Date', 'CreditNoteDate'],
+    'amount': ['Credit_note_amount', 'CreditNoteAmount', 'Credit Note Amount', 'CN_Amount', 'CreditAmount'],
+    'unit': ['Business Unit', 'BU', 'Branch', 'Unit', 'SO_Project', 'COGSCostingCode']
+}
+
+CN_FORMAT4_DB_COLS = {
+    'ref': ['Credit_Note_ID', 'CreditNoteID', 'Credit Note ID', 'CN_ID', 'CNID'],
+    'date': ['Date', 'CN_Date', 'CNDate', 'Credit_Note_Date'],
+    'amount': ['Amount', 'CN_Amount', 'Credit_note_amount', 'CreditNoteAmount'],
+    'unit': ['Business Unit', 'BU', 'Branch', 'Unit', 'COGSCostingCode']
+}
+
+# SAP columns used for all CN matching (always via Ref. 2)
+CN_SAP_COLS = {
+    'ref': ['Ref. 2 (Header)', 'Ref 2 (Header)', 'Ref. 2', 'Ref 2', 'Ref.2', 'Ref2', 'Origin No.'],
+    'date': ['Posting Date', 'PostingDate', 'DocDate', 'Date'],
+    'amt': ['C/D (LC)', 'C/D(LC)', 'CD LC', 'Deb./Cred. (LC)', 'Deb/Cred (LC)', 'Debit/Credit (LC)', 'Debit (LC)', 'Amount (LC)', 'LC Amount'],
+    'unit': ['Business Unit', 'BU', 'Branch', 'Unit', 'COGSCostingCode']
+}
+
 
 # Customer Mapping Candidates
 CUSTOMER_MAP_COLS = {

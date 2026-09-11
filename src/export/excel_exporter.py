@@ -91,6 +91,11 @@ class ExcelReportExporter:
         else:
             sales_df['_Particulars'] = 'Sales'
 
+        # Override: rows with explicit Particulars='CN' from CN recon pipeline
+        if 'Particulars' in sales_df.columns:
+            explicit_cn = sales_df['Particulars'].astype(str).str.strip().str.upper() == 'CN'
+            sales_df.loc[explicit_cn, '_Particulars'] = 'CN'
+
         # Extract all distinct BU values dynamically from SAP records
         bu_col = 'Business_Unit'
         if bu_col in sales_df.columns:
@@ -471,6 +476,12 @@ class ExcelReportExporter:
                 report("Writing Collection - Bank Data sheet", 0, 1)
                 coll_bank_side_df.to_excel(writer, sheet_name='Collection - Bank Data', index=False)
 
+            # "Data Not Available in DB" sheet — SAP rows with no matching DB record
+            data_not_in_db = results_df.attrs.get('data_not_in_db') if hasattr(results_df, 'attrs') else None
+            if data_not_in_db is not None and isinstance(data_not_in_db, pd.DataFrame) and not data_not_in_db.empty:
+                report("Writing 'data not available in DB' sheet", 0, 1)
+                data_not_in_db.to_excel(writer, sheet_name='data not available in DB', index=False)
+
             wb = writer.book
 
             # ----------------------------------------------------------
@@ -539,7 +550,7 @@ class ExcelReportExporter:
                     _style_sheet(wb[sheet_name], df_rows, sheet_name)
 
             # Style the plain raw data sheets (no status colouring)
-            for plain_sheet in ('Sales - SAP Data', 'Sales - DB Data', 'Collection - SAP Data', 'Collection - Bank Data'):
+            for plain_sheet in ('Sales - SAP Data', 'Sales - DB Data', 'Collection - SAP Data', 'Collection - Bank Data', 'data not available in DB'):
                 if plain_sheet in wb.sheetnames:
                     _style_plain_sheet(wb[plain_sheet], plain_sheet)
 
@@ -787,6 +798,13 @@ class ExcelReportExporter:
             _stream_sheet('Collection - SAP Data', coll_sap_side_df, apply_status_color=False)
         if not coll_bank_side_df.empty:
             _stream_sheet('Collection - Bank Data', coll_bank_side_df, apply_status_color=False)
+
+        # ----------------------------------------------------------
+        # 5. "Data Not Available in DB" sheet
+        # ----------------------------------------------------------
+        data_not_in_db = results_df.attrs.get('data_not_in_db') if hasattr(results_df, 'attrs') else None
+        if data_not_in_db is not None and isinstance(data_not_in_db, pd.DataFrame) and not data_not_in_db.empty:
+            _stream_sheet('data not available in DB', data_not_in_db, apply_status_color=False)
 
         report("Finalizing Excel workbook", 0, 1)
         wb.close()

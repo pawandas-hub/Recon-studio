@@ -1,16 +1,25 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 1. ekhon ja  ja format cholche sales er jonno sob formate sales hole credit note o thake abong tai ami age theke already extract file e excutive sheet e cn bole ekta option diyechi. tai je bu er je je cn thakbe tar tar total amount ar diffarencr okhane bosate hobe 
-2. formate 1 er jonno db cn datar order_id main jar sqathe tomake sqap ledger er ref.2 theke i'd match korte hobe. Tarpor tomake 
+2. formate 1 er jonno db cn detar order_id main jar sqathe tomake sap ledger er ref.2 theke i'd match korte hobe. Tarpor tomake db cn id er against e date nite hobe jeta tumi created_at column e thakbe ar sathe sap ledger er ref.2 id er against e posting date niye match korte hobe. tarpor tomake db cn id er against e amount (Credit_note_amount jeta without gst amount(gst_percentage)hobe) nite hobe ar sap ledger e ref. 2 id er against e C/D (LC) theke total amount niye match korte hobe 
+3. formate 2 er jonno db cn detar CN_ID main jar sqathe tomake sap ledger er ref.2 theke i'd match korte hobe. Tarpor tomake db cn id er against e date nite hobe jeta tumi CN_Date column e thakbe ar sathe sap ledger er ref.2 id er against e posting date niye match korte hobe. tarpor tomake db cn id er against e amount (Credit_note_amount hobe) nite hobe ar sap ledger e ref. 2 id er against e C/D (LC) theke total amount niye match korte hobe 
+4. sob formate e recon korar somoy jodi kono emon data jeta sap ledger e sei formate er same BU against e ache kintu same formate er db data te nei tahole tar khetre sei line item gulo copy kore ekta notun sheet e past kore debe ar sheet name thakbe data not available in DB
+5. arek ta notun recon style add hobe jeta formate 4 er under e hobe, jekhane db data theke so_id niye sap ledger er ref.1 ba ref.2 theke same id match korte hobe. tarpor db data theke so_id er against e DocDate er sathe sap ledger er ref.1 ba ref.2 er against e posting date niye match korte hobe. tarpor db data theke so_id er against e TaxableAmount er sathe sap ledger e ref.1 ba ref.2 er against e C/D (LC) er theke total amount niye match korte hobe. tarpor db data theke so_id er against e SAP_ID er sathe sap ledger er ref.1 ba ref.2 er against e Offset Account niye match korte hobe.
+6. formate 4 er jonno db cn detar Credit_Note_ID main jar sqathe tomake sap ledger er ref.2 theke i'd match korte hobe. Tarpor tomake db cn id er against e date nite hobe jeta tumi Date column e thakbe ar sathe sap ledger er ref.2 id er against e posting date niye match korte hobe. tarpor tomake db cn id er against e Amount nite hobe ar sap ledger e ref. 2 id er against e C/D (LC) theke total amount niye match korte hobe
 
-
-
-
-
-
-
-
-
-
-
+*ei sob kichu korte giye dekhbe jeno puro kono kichu change na hoye jay. ar ekhon jaja notun ready korbe ta jeno thik thak hoy keno na ami jokhon online link e push korar button click korbo tokhon jeno sob thik thak vabe complete hoy*
 
 
 
