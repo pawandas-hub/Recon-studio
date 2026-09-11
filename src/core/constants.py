@@ -111,6 +111,36 @@ CN_SAP_COLS = {
     'unit': ['Business Unit', 'BU', 'Branch', 'Unit', 'COGSCostingCode']
 }
 
+# Format 5: GRNID vs Ref. 1 with DocTotal
+FORMAT5_BU_COLS = {
+    'ref': ['Ref. 1 (Header)', 'Ref 1 (Header)', 'Ref. 1', 'Ref1', 'Ref 1', 'Reference', 'DocNum'],
+    'date': ['Posting Date', 'PostingDate', 'DocDate', 'Date'],
+    'amt': ['Deb./Cred. (LC)', 'Deb/Cred (LC)', 'Debit/Credit (LC)', 'C/D (LC)', 'C/D(LC)', 'CD LC', 'Debit (LC)', 'Amount (LC)', 'LC Amount'],
+    'unit': ['Business Unit', 'BU', 'Branch', 'Unit', 'COGSCostingCode']
+}
+
+FORMAT5_DB_COLS = {
+    'ref': ['GRNID', 'GRN_ID', 'GRN Id', 'GRN', 'grnid'],
+    'date': ['DocDate', 'Doc Date', 'Doc_Date', 'Date', 'Posting Date'],
+    'amt': ['DocTotal', 'Doc_Total', 'DOC_Total', 'Doc Total', 'TotalInvoiceValue', 'Sales'],
+    'unit': ['COGSCostingCode', 'COGSCostingCode2', 'Business Unit', 'BU', 'Branch', 'Unit']
+}
+
+# Format 6: GRNID vs Ref. 1 with Sales_without_gst
+FORMAT6_BU_COLS = {
+    'ref': ['Ref. 1 (Header)', 'Ref 1 (Header)', 'Ref. 1', 'Ref1', 'Ref 1', 'Reference', 'DocNum'],
+    'date': ['Posting Date', 'PostingDate', 'DocDate', 'Date'],
+    'amt': ['Deb./Cred. (LC)', 'Deb/Cred (LC)', 'Debit/Credit (LC)', 'C/D (LC)', 'C/D(LC)', 'CD LC', 'Debit (LC)', 'Amount (LC)', 'LC Amount'],
+    'unit': ['Business Unit', 'BU', 'Branch', 'Unit', 'COGSCostingCode']
+}
+
+FORMAT6_DB_COLS = {
+    'ref': ['GRNID', 'GRN_ID', 'GRN Id', 'GRN', 'grnid'],
+    'date': ['DocDate', 'Doc Date', 'Doc_Date', 'Date', 'Posting Date'],
+    'amt': ['Sales_without_gst', 'Sales_Without_GST', 'SalesWithoutGST', 'Sales without GST', 'sales_without_gst', 'SalesWithoutGst'],
+    'unit': ['COGSCostingCode', 'COGSCostingCode2', 'Business Unit', 'BU', 'Branch', 'Unit']
+}
+
 
 # Customer Mapping Candidates
 CUSTOMER_MAP_COLS = {

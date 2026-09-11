@@ -1,6 +1,12 @@
+1. amar ei recon system e aro kichu notun dhoroner sale and collection data add korbo jar sheet e column name alada alada hobe 
+2. ei notun dhoroner recon er jonno DB te tomar jonno GRNID column ta main thakbe are sap ledger er khetre ref.1 GRNID nite hobe 
+3. tarpor tomake db GRNID er against e DocTotal er sathe sap ledger er GRNID er against er sathe Deb./Cred. (LC) theke total amount niye match korte hobe 
+4. Tarpor tomake Db GRNID er against er sathe DocDate and sap invoice er against e Posting Date match korte hobe 
+5. ei notun dhoroner recon er jonno DB te tomar jonno GRNID column ta main thakbe are sap ledger er khetre ref.1 GRNID nite hobe 
+3. tarpor tomake db GRNID er against e Sales_without_gst er sathe sap ledger er GRNID er against er sathe Deb./Cred. (LC) theke total amount niye match korte hobe 
+4. Tarpor tomake Db GRNID er against er sathe DocDate and sap invoice er against e Posting Date match korte hobe 
 
-
-
+*inportent- ei sob kichu add korte giye jeno purono kono recon niyom change na hoye jay*
 
 
 

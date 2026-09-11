@@ -244,5 +244,64 @@ def test_format4_reconciliation_and_detection():
     assert results.loc[results['SO_ID'] == '1003', 'Overall_Status'].values[0] == 'Not Matched'
 
 
+def test_format5_reconciliation_and_detection():
+    """Verify Format 5 (GRNID vs Ref. 1 / DocTotal) detection and reconciliation."""
+    from src.core.detector import detect_format
+
+    df_bu = pd.DataFrame({
+        'Ref. 1 (Header)': ['GRN-101', 'GRN-102'],
+        'Posting Date': ['2026-08-01', '2026-08-02'],
+        'Deb./Cred. (LC)': [12500.0, 45000.0],
+        'Business Unit': ['BU_3', 'BU_3'],
+    })
+    df_db = pd.DataFrame({
+        'GRNID': ['101', '102', '103'],
+        'DocDate': ['2026-08-01', '2026-08-02', '2026-08-03'],
+        'DocTotal': [12500.0, 44000.0, 9000.0],
+        'COGSCostingCode': ['BU_3', 'BU_3', 'BU_3'],
+    })
+
+    fmt = detect_format(df_bu, df_db)
+    assert fmt == "format5", f"Expected format5, got {fmt}"
+
+    results = reconcile_dataframes(df_bu, df_db)
+    assert len(results) == 3
+    assert results.loc[results['GRNID'] == '101', 'Overall_Status'].values[0] == 'Matched'
+    assert results.loc[results['GRNID'] == '102', 'Overall_Status'].values[0] == 'Not Matched'
+    assert 'Amount Variance' in results.loc[results['GRNID'] == '102', 'Reconciliation_Remarks'].values[0]
+    assert results.loc[results['GRNID'] == '103', 'Overall_Status'].values[0] == 'Not Matched'
+    assert 'Missing in SAP' in results.loc[results['GRNID'] == '103', 'Reconciliation_Remarks'].values[0]
+
+
+def test_format6_reconciliation_and_detection():
+    """Verify Format 6 (GRNID vs Ref. 1 / Sales_without_gst) detection and reconciliation."""
+    from src.core.detector import detect_format
+
+    df_bu = pd.DataFrame({
+        'Ref. 1 (Header)': ['GRN-201', 'GRN-202'],
+        'Posting Date': ['2026-08-01', '2026-08-02'],
+        'Deb./Cred. (LC)': [8500.0, 19200.0],
+        'Business Unit': ['BU_4', 'BU_4'],
+    })
+    df_db = pd.DataFrame({
+        'GRNID': ['201', '202', '203'],
+        'InvoiceId': ['INV-A', 'INV-B', 'INV-C'],
+        'DocDate': ['2026-08-01', '2026-08-02', '2026-08-03'],
+        'Sales_without_gst': [8500.0, 19200.0, 5000.0],
+        'DocTotal': [10000.0, 22000.0, 6000.0],
+        'COGSCostingCode': ['BU_4', 'BU_4', 'BU_4'],
+    })
+
+    fmt = detect_format(df_bu, df_db)
+    assert fmt == "format6", f"Expected format6, got {fmt}"
+
+    results = reconcile_dataframes(df_bu, df_db)
+    assert len(results) == 3
+    assert results.loc[results['GRNID'] == '201', 'Overall_Status'].values[0] == 'Matched'
+    assert results.loc[results['GRNID'] == '202', 'Overall_Status'].values[0] == 'Matched'
+    assert results.loc[results['GRNID'] == '203', 'Overall_Status'].values[0] == 'Not Matched'
+
+
+
 
 

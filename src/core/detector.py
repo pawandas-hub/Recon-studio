@@ -97,7 +97,7 @@ def is_bank_table(df: pd.DataFrame) -> bool:
     return (has_transaction and has_amount and has_date) or (has_description and has_amount)
 
 def detect_format(df_bu: pd.DataFrame, df_db: pd.DataFrame, mode: str = "Auto") -> str:
-    """Detects reconciliation mode: 'format1' (Ref 1), 'format2' (Retailer Ref 2), 'format3' (AFC / Freight & GRN), or 'format4' (SO_ID / Sales with SAP_ID)."""
+    """Detects reconciliation mode: 'format1' (Ref 1), 'format2' (Retailer Ref 2), 'format3' (AFC / Freight & GRN), 'format4' (SO_ID / Sales with SAP_ID), 'format5' (GRNID / Ref. 1 vs DocTotal), or 'format6' (GRNID / Ref. 1 vs Sales without GST)."""
     if mode == "Format 1 (Legacy / Ref. 1 vs DB)":
         return "format1"
     if mode == "Format 2 (Retailer / Ref. 2 vs Invoice No)":
@@ -106,6 +106,10 @@ def detect_format(df_bu: pd.DataFrame, df_db: pd.DataFrame, mode: str = "Auto") 
         return "format3"
     if mode in ("Format 4 (SO_ID / Sales with SAP_ID)", "format4") or str(mode).startswith("Format 4"):
         return "format4"
+    if mode in ("Format 5 (GRNID / Ref. 1 vs DocTotal)", "format5") or str(mode).startswith("Format 5"):
+        return "format5"
+    if mode in ("Format 6 (GRNID / Ref. 1 vs Sales without GST)", "format6") or str(mode).startswith("Format 6"):
+        return "format6"
 
     bu_cols_clean = [re.sub(r'[\s_\-\(\)\/\.]+', '', str(c).lower()) for c in df_bu.columns]
     db_cols_clean = [re.sub(r'[\s_\-\(\)\/\.]+', '', str(c).lower()) for c in df_db.columns]
@@ -115,9 +119,25 @@ def detect_format(df_bu: pd.DataFrame, df_db: pd.DataFrame, mode: str = "Auto") 
     if 'soid' in db_cols_clean:
         return "format4"
 
+    # Format 6 signatures: DB has sales_without_gst + grnid (unique to Format 6)
+    if 'saleswithoutgst' in db_cols_clean and 'grnid' in db_cols_clean:
+        return "format6"
+
+    # Format 1 signatures: DB has refid (unique to Format 1, prevents SAPOmni with GRNID/DocTotal misclassifying)
+    if 'refid' in db_cols_clean:
+        return "format1"
+
+    # Format 2 signatures: DB has invoicenumber + totalvalueafterdisc
+    if 'invoicenumber' in db_cols_clean and any(k in db_cols_clean for k in ['totalvalueafterdisc', 'totalvalueafterdiscount', 'customerid']):
+        return "format2"
+
+    # Format 5 signatures: DB has grnid + doctotal without invoiceid
+    if 'grnid' in db_cols_clean and any(k in db_cols_clean for k in ['doctotal', 'totalinvoicevalue']) and 'invoiceid' not in db_cols_clean:
+        return "format5"
+
     # Format 3 signatures:
-    # 1. DB has GRNID or specific discount/charge columns
-    f3_db_indicators = ['grnid', 'upidiscount', 'walletdiscount', 'packingcharges', 'packingcharge']
+    # 1. DB has specific discount/charge columns or GRNID with InvoiceId
+    f3_db_indicators = ['upidiscount', 'walletdiscount', 'packingcharges', 'packingcharge']
     has_f3_db = any(k in db_cols_clean for k in f3_db_indicators)
     # 2. DB has InvoiceId together with Freight
     if not has_f3_db:
