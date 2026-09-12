@@ -24,8 +24,25 @@ def test_clean_number():
     assert clean_number("1,234.56") == 1234.56
     assert clean_number("-500.00") == 500.00
     assert clean_number(250.75) == 250.75
+    assert clean_number("INR (2,223.41)") == 2223.41
+    assert clean_number("INR 2,223.41") == 2223.41
     assert clean_number(None) == 0.0
     assert clean_number("invalid") == 0.0
+
+def test_clean_signed_number():
+    from src.core.cleaners import clean_signed_number
+    assert clean_signed_number("1,234.56") == 1234.56
+    assert clean_signed_number("-500.00") == -500.00
+    assert clean_signed_number("500.00-") == -500.00
+    assert clean_signed_number("(500.00)") == -500.00
+    assert clean_signed_number("INR (2,223.41)") == -2223.41
+    assert clean_signed_number("INR 2,223.41") == 2223.41
+    assert clean_signed_number("INR -4,115,075,324.78") == -4115075324.78
+    assert clean_signed_number("(INR 2,223.41)") == -2223.41
+    assert clean_signed_number("1,500.00 CR") == -1500.00
+    assert clean_signed_number("1,500.00 DR") == 1500.00
+    assert clean_signed_number(None) == 0.0
+    assert clean_signed_number("invalid") == 0.0
 
 def test_parse_date_series():
     s = pd.Series(["06/08/26", "2026-08-06", "invalid_date", None])
@@ -34,4 +51,5 @@ def test_parse_date_series():
     assert res[1] == "2026-08-06"
     assert res[2] == "Missing Date"
     assert res[3] == "Missing Date"
+
 

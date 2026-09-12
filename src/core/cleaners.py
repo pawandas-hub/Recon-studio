@@ -42,45 +42,57 @@ def clean_card(val) -> str:
                 break
     return s.strip()
 
-def clean_number(val) -> float:
-    """Converts mixed number types (strings with commas, floats, ints) to absolute float."""
-    if pd.isna(val):
-        return 0.0
-    if isinstance(val, (int, float)):
-        return abs(float(val))
-    s = str(val).replace(',', '').strip()
-    # Handle SAP trailing-minus and parenthesis before abs
-    if s.endswith('-'):
-        s = s[:-1]
-    elif s.startswith('(') and s.endswith(')'):
-        s = s[1:-1]
-    try:
-        return abs(float(s))
-    except ValueError:
-        return 0.0
-
 def clean_signed_number(val) -> float:
     """Converts mixed number types to float while preserving the source sign.
 
     Supports standard formats and SAP accounting formats:
-      - Trailing minus:    "50000.00-"   → -50000.0
-      - Parentheses (CR):  "(1,234.50)"  → -1234.5
+      - Currency prefixes: "INR (2,223.41)" → -2223.41, "INR 2,223.41" → 2223.41
+      - Trailing minus:    "50000.00-"       → -50000.0
+      - Parentheses (CR):  "(1,234.50)"      → -1234.5
+      - CR/DR notation:    "1,234.50 CR"     → -1234.5
     """
-    if pd.isna(val):
+    if val is None or pd.isna(val):
         return 0.0
     if isinstance(val, (int, float)):
-        return float(val)
-    s = str(val).replace(',', '').strip()
-    # SAP trailing-minus format: "50000.00-"
+        import math
+        return 0.0 if math.isnan(val) else float(val)
+    s = str(val).strip()
+    if not s or s.lower() in ('nan', 'none', 'null', '<na>', ''):
+        return 0.0
+
+    # Strip currency prefixes (e.g. INR, RS, RS., USD, EUR, GBP, ₹, $, €, £)
+    s = re.sub(r'^(?:INR|RS\.?|USD|EUR|GBP|AUD|CAD|₹|\$|€|£)\s*', '', s, flags=re.IGNORECASE).strip()
+    s = s.replace(',', '').strip()
+
+    # Trailing minus: '123.45-'
     if s.endswith('-'):
-        s = '-' + s[:-1]
-    # Accounting parentheses format: "(50000.00)"
+        s = '-' + s[:-1].strip()
+    # Accounting parentheses format: '(123.45)' or '(INR 123.45)'
     elif s.startswith('(') and s.endswith(')'):
-        s = '-' + s[1:-1]
+        s = '-' + s[1:-1].strip()
+
+    is_neg = s.startswith('-')
+    if is_neg:
+        s = s[1:].strip()
+    # Strip any inner currency code if it was inside parentheses e.g. -(INR 123.45)
+    s = re.sub(r'^(?:INR|RS\.?|USD|EUR|GBP|AUD|CAD|₹|\$|€|£)\s*', '', s, flags=re.IGNORECASE).strip()
+
+    if s.upper().endswith('CR'):
+        is_neg = True
+        s = s[:-2].strip()
+    elif s.upper().endswith('DR'):
+        s = s[:-2].strip()
+
     try:
-        return float(s)
+        val_float = float(s)
+        return -val_float if is_neg else val_float
     except ValueError:
         return 0.0
+
+def clean_number(val) -> float:
+    """Converts mixed number types (strings with commas, currency prefixes, floats, ints) to absolute float."""
+    return abs(clean_signed_number(val))
+
 
 def clean_number_series(s: Optional[pd.Series]) -> pd.Series:
     """Vectorized helper: converts a Series to absolute float quickly."""

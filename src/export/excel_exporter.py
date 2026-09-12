@@ -694,20 +694,13 @@ class ExcelReportExporter:
                             m_l = l_v
                 ws.set_column(c_i, c_i, min(max(m_l + 3, 12), 60))
 
-            chunk = 20000
-            for r_i, row in enumerate(df.itertuples(index=False, name=None), start=1):
-                clean = [
-                    None if (v is None or pd.isna(v))
-                    else (f"'{v}" if isinstance(v, str) and v.startswith(('=', '+', '-', '@')) else v)
-                    for v in row
-                ]
-                ws.write_row(r_i, 0, clean)
             rows = _prepare_df_for_stream(df)
             chunk = 25000
             for r_i, row in enumerate(rows, 1):
                 ws.write_row(r_i, 0, row)
                 if r_i % chunk == 0:
                     report(f"Writing {sheet_name}", r_i, num_r)
+
 
             report(f"Writing {sheet_name}", num_r, num_r)
             return ws

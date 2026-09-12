@@ -1199,8 +1199,11 @@ def process_file_list(
         return bool(re.search(r'^(402|401|sales)', fn) or '4020101' in fn or '401' in fn)
 
     def is_bank_sap_file(path: str) -> bool:
+        if is_sales_sap_file(path) or is_freight_sap_file(path):
+            return False
         fn = os.path.basename(path).lower()
-        return bool(re.search(r'^(101|account balance|bank|icici|scb)', fn) or '1010202' in fn or 'account balance' in fn)
+        return bool(re.search(r'^(101|bank|icici|scb|pnb|cms)', fn) or '1010202' in fn or 'account balance' in fn)
+
 
     freight_sap_frames = [f for p, f in sap_files if is_freight_sap_file(p)]
     freight_sap = pd.concat(freight_sap_frames, ignore_index=True) if freight_sap_frames else None
