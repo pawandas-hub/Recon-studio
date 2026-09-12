@@ -13,11 +13,6 @@
 
 
 
-
-
-
-
-
 1. ekhon ja  ja format cholche sales er jonno sob formate sales hole credit note o thake abong tai ami age theke already extract file e excutive sheet e cn bole ekta option diyechi. tai je bu er je je cn thakbe tar tar total amount ar diffarencr okhane bosate hobe 
 2. formate 1 er jonno db cn detar order_id main jar sqathe tomake sap ledger er ref.2 theke i'd match korte hobe. Tarpor tomake db cn id er against e date nite hobe jeta tumi created_at column e thakbe ar sathe sap ledger er ref.2 id er against e posting date niye match korte hobe. tarpor tomake db cn id er against e amount (Credit_note_amount jeta without gst amount(gst_percentage)hobe) nite hobe ar sap ledger e ref. 2 id er against e C/D (LC) theke total amount niye match korte hobe 
 3. formate 2 er jonno db cn detar CN_ID main jar sqathe tomake sap ledger er ref.2 theke i'd match korte hobe. Tarpor tomake db cn id er against e date nite hobe jeta tumi CN_Date column e thakbe ar sathe sap ledger er ref.2 id er against e posting date niye match korte hobe. tarpor tomake db cn id er against e amount (Credit_note_amount hobe) nite hobe ar sap ledger e ref. 2 id er against e C/D (LC) theke total amount niye match korte hobe 

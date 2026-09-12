@@ -68,6 +68,7 @@ class ThemeVars:
     text: str
     muted: str
     primary: str
+    primary_hover: str
     primary_soft: str
     green: str
     green_soft: str
@@ -81,7 +82,7 @@ class ThemeVars:
 LIGHT = ThemeVars(
     bg="#f4f6fb", card="#ffffff", border="#e6eaf2",
     text="#0f172a", muted="#64748b",
-    primary="#4f46e5", primary_soft="#eef2ff",
+    primary="#4f46e5", primary_hover="#4338ca", primary_soft="#eef2ff",
     green="#10b981", green_soft="#ecfdf5",
     amber="#f59e0b", amber_soft="#fffbeb",
     red="#ef4444", red_soft="#fef2f2",
@@ -91,7 +92,7 @@ LIGHT = ThemeVars(
 DARK = ThemeVars(
     bg="#0b1220", card="#111a2e", border="#1f2b45",
     text="#e2e8f0", muted="#8fa0ba",
-    primary="#818cf8", primary_soft="#1e1b4b",
+    primary="#818cf8", primary_hover="#6366f1", primary_soft="#1e1b4b",
     green="#10b981", green_soft="#062a20",
     amber="#f59e0b", amber_soft="#2b1e05",
     red="#ef4444", red_soft="#2c0e0e",
